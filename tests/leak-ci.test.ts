@@ -37,7 +37,7 @@ test('CI runs the kit once with no network at all, and proves there is none', ()
   const leak = job('leak-test')
   assert.match(leak, /unshare --net/)
   assert.match(leak, /ip link set lo up/)
-  assert.match(leak, /net\.connect/)
+  assert.match(leak, /node:net.*\.connect\(443/)
 })
 
 test('the pin is one exact version, with a sha512 for every OS CI runs on', () => {
