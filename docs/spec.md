@@ -70,6 +70,8 @@ A Claude Code plugin with a hooks module, written in TypeScript. It uses these h
 |---|---|
 | `session.append` | **All hiding.** Every row the conversation keeps passes through it before it is stored or sent: typed prompts, slash-command output, tool results (including errors), attachments, injected context (including settings hooks' context), queued messages, compaction summaries, and the same rows inside subagents (check 0.1). |
 | `prompt.submit` | Hides secrets in the prompt text before it is recorded anywhere, including the message-queue record. |
+| `prompt.context` | The blocks a conversation's first message carries, including the project's `CLAUDE.md` text, which is rendered per request and never passes `session.append` (D-042). |
+| `prompt.attachment` | Text the engine injects per request. A rewrite at `session.append` can be ignored for these, so this is the second layer (D-042). |
 | `prompt.mention` | `@` files: points the read at a redacted temporary copy, or refuses it (section 6). Works for a plugin in the user tier (check 0.2). The model sees the copy's path, so the copy's name **must not** reveal that it is a copy, and the model's own Read of the real file is hidden at `session.append`. |
 | `tool.call` | Outbound check (section 11), self-protection (section 17), overwrite guard (section 10). |
 | `prompt.compose` | Adds the short placeholder note to Claude's instructions. The note **must** be the same for the whole thread, because changing it later breaks the prompt cache. |
@@ -91,7 +93,7 @@ Settings-file hooks (`UserPromptSubmit`, `PreToolUse`, `PostToolUse`) that run t
 | Change a tool's input before it runs (check 0.9) | |
 | Clean a tool's output after it runs, built-in tools included, by returning the tool's own result with secrets replaced. The result **must** keep the tool's shape; any other value is ignored (check 0.9). | |
 
-- **R-04** The main lock **must** write an "I'm running" marker per session. The backup lock **must** check for the marker and do nothing when it is there, and switch to strict mode for that session when it is missing.
+- **R-04** The main lock **must** write an "I'm running" marker per session. The backup lock **must** check for the marker and do nothing when it says running, and switch to strict mode for that session when it is missing or says not running. A mod can't delete a file, so the marker ends the session as `running: false`, which counts as missing (D-047).
 
 ### 5.3 Personal mode vs Managed mode
 
@@ -199,11 +201,14 @@ An earlier design stored only keyed fingerprints. That conflicts with two other 
 
 | Part | Design |
 |---|---|
-| At rest | The list of secrets (each with a label and the date added) is locked by the OS password store itself: Windows DPAPI (current user, through PowerShell), macOS Keychain (`security`), Linux Secret Service (`secret-tool`). The plugin can't encrypt on its own: its runtime has no AES (check 0.4). |
-| How the plugin reaches it | `$.process.run`. On Windows a DPAPI round trip took about 0.8 s, which doesn't count toward a hook's time limit (checks 0.4, 0.6). macOS and Linux are confirmed in step 1 (D-020). |
+| At rest | The list of secrets (each with a label and the date added) is locked by the OS password store itself: Windows DPAPI (current user, through PowerShell, with the blob in a file), macOS Keychain (`security`), Linux Secret Service (`secret-tool`). The plugin can't encrypt on its own: its runtime has no AES (check 0.4). |
+| Pieces | Every list is split into items, a small list being one, so there is one code path (D-036). Sizes come from measurements (D-045): macOS 2,048 bytes × 50, Linux 4,096 bytes × 64, Windows one item of 256 KiB. That is roughly 750 to 1,900 secrets of ordinary size. `/redact learn` must say so when it reaches the cap. |
+| Saving | All or nothing: pieces first, each read back, then a small index holding a count and a checksum, itself kept in the store. A failed save leaves the old list working. |
+| Reading | Proves the list is whole. A missing or damaged piece gives a visible warning and no list, never a partial one. |
+| How the plugin reaches it | `$.process.run`, values on stdin only, never on a command line. A read takes about 18 ms per item on macOS, 11 ms on Linux and 0.2 to 0.5 s on Windows, which doesn't count toward a hook's time limit (checks 0.4, 0.6, D-045). A session with no list starts no process on Windows. |
 | No password store (headless Linux, some containers) | The tool keeps working without saved secrets (session catches still work) and `/redact doctor` warns. A plaintext key file is not used. |
 | In use | Decrypted into memory when the session starts, never written to disk in plain form |
-| Session catches (check 4) | Memory only, for that session |
+| Session catches (check 4) | Memory only, for that session, in the host's `$.state` so a restarted worker keeps them (D-044). At most 5,000 values and 100,000 characters. A value over 8,192 characters is hidden where it was found, but not remembered (D-052). |
 
 **Trade-off on record:** someone running as the same user can decrypt the file, just as they can read `.env`. This protects against copying the file elsewhere, not against malware already running as the user.
 
@@ -215,12 +220,12 @@ An earlier design stored only keyed fingerprints. That conflicts with two other 
 A placeholder in place of each secret, for example:
 
 ```
-[REDACTED:AWS_KEY ...0001 #k7q2m9x4p1]
+[REDACTED:AWS_KEY ...0001 #k7q2m9x4p1abc]
 ```
 
 - **Label:** what kind of secret it was.
 - **Last 4 characters:** only for secrets of 12 or more characters, and never for password-label values (check 2). Setting `hints: off` removes them.
-- **Random tag:** at least 64 random bits from a secure source. The same secret gets the same tag within a session, including in subagents. Two different secrets never share a tag.
+- **Random tag:** 13 base32 characters, which is 65 random bits from a secure source. The same secret gets the same tag within a session, including in subagents. Two different secrets never share a tag.
 
 The placeholder note added to Claude's instructions says:
 - These are hidden values.
@@ -265,7 +270,7 @@ Claude Code gives each hook **10 seconds of its own time**: time spent waiting o
 | `hold` | The `.catch` handler withholds the content. Claude gets a short note saying it was withheld. |
 
 - Admins can lock this setting. **Managed-mode docs recommend `hold`.**
-- **R-12** Every failure **must** produce a visible warning and a log entry, whichever setting is used.
+- **R-12** Every failure **must** produce a log entry and a visible warning, whichever setting is used. When the same failure repeats, the screen shows the first 3 and then every 50th, with a count, so a slow file doesn't bury it; the log records each one (D-048).
 
 *Trade-off on record:* with `allow`, a crash or slowdown means that piece of content reaches the model unchecked. The warning makes sure the user knows when it happens.
 
@@ -282,13 +287,13 @@ Observe mode is for organizations measuring false alarms before rollout.
 
 ## 14. Settings
 
-The tool works with no settings at all. Settings are read from three levels:
+The tool works with no settings at all. Settings live under a `secretShield` key in Claude Code's own settings files, read through `$.settings.read` (D-041). Three levels apply:
 
 | Level | Where | Who | Rule |
 |---|---|---|---|
-| Managed | The organization's managed settings | Admin | Wins over everything. Can lock any setting. |
-| User | User's home folder | Developer | Can change anything not locked |
-| Project | In the project repo | Team | **Can only make things stricter.** A downloaded project can't weaken protection. |
+| Managed | The organization's managed settings (source `policy`) | Admin | The starting point. Can lock any setting with `locked`, a list of setting names (D-049). |
+| User | `settings.json` in the user's Claude folder (source `user`) | Developer | Can change anything not locked |
+| Project | The project's `.claude/settings.json` and `settings.local.json`, and `--settings` (sources `project`, `local`, `flag`) | Team | **Can only make things stricter.** A downloaded project can't weaken protection. A broken project source is left out on its own. |
 
 "Stricter only" means a project **cannot**:
 - add `allow` entries
@@ -310,7 +315,7 @@ A project **can** add custom rules and `secret_files` patterns, and choose stric
 | `notices` | `on` | `on`, `off` |
 | `rules.off` | none | Rule ids to switch off |
 | `rules.custom` | none | Extra patterns, each with a label and a keyword |
-| `rules.actions` | `hide` for all | Per rule: `block`, `hide`, `warn` |
+| `rules.actions` | `hide` for all | Per rule. `hide`: a placeholder. `warn`: the value stays visible, with a warning and a log entry. `block`: a prompt is dropped with the reason; any other row keeps its place, with its text replaced by a short "withheld" note, because a row can't be refused (D-040). |
 | `allow` | none | Values or patterns that are harmless |
 | `secret_files` | `.env*` | File patterns treated as secret |
 | `log.days` | `30` | Number of days |
@@ -336,7 +341,7 @@ A project **can** add custom rules and `secret_files` patterns, and choose stric
 - **Where:** a local file on the user's machine.
 - **What it records:** time, which check fired, where (prompt, file name, tool), action taken, mode, and the random tag.
 - **R-17** The log **must never** contain a secret. Command text and file paths are logged in their redacted form.
-- **How long:** 30 days by default (`log.days`).
+- **How long:** 30 days by default (`log.days`). A mod can't delete a file, so an older log is emptied and only its name stays (D-047).
 
 ## 17. The tool protecting itself
 
@@ -414,7 +419,7 @@ The maintainers can't test inside every organization. So everything needed to te
 
 - **Shapeless secrets.** A secret with no known shape, no label, never registered and never seen before can't be detected by any tool. Registering secrets and "once caught, always caught" shrink this gap.
 - **Already sent.** Content sent before the tool was installed, or before a secret was registered, can't be taken back (sections 6.1, 6.2).
-- **Claude Code's own disk records.** Claude Code keeps backup copies of edited files in `~/.claude/file-history/`. It also stores a tool's structured result (what the screen shows) unchanged next to the redacted text. Its auto-memory can save text from a prompt into project memory files. A prompt blocked by a hook is still written to the session transcript. The tool can't change these. We'll report them to Anthropic.
+- **Claude Code's own disk records.** Claude Code keeps backup copies of edited files in `~/.claude/file-history/`. It saves a large command output as a raw `.txt` file beside the session transcript, and the model is pointed at that file; a Read of it is hidden like any other, but the copy on disk stays raw. It also stores a tool's structured result (what the screen shows) unchanged next to the redacted text. Its auto-memory can save text from a prompt into project memory files. A prompt blocked by a hook is still written to the session transcript. The tool can't change these. We'll report them to Anthropic.
 - **Images and documents** are passed or dropped, never read, in v1.
 - **Personal mode:**
   - plugins in a higher tier can skip this tool
@@ -423,6 +428,8 @@ The maintainers can't test inside every organization. So everything needed to te
 - **Safe mode** turns the main lock off. In Personal mode it turns the backup lock off too. A backup lock installed through managed settings still runs, but it can only block messages, not hide parts of them.
 - **Failed or slow checks** let content through by default (section 12).
 - **Observe mode** hides nothing, by design.
+- **Bare values in base64.** A value with no shape and no label is found once it is decoded only if it has a shape, was registered, or was caught earlier. The catch set has 3 such cases (D-046).
+- **Very long values.** A value over 8,192 characters isn't remembered (D-052). It is hidden, or blocked, wherever its shape or label is found, but a copy with neither is neither hidden nor blocked, even later in the same text. The person is warned once.
 - **Kubernetes Secret files.** The Gitleaks rule for them is left out (D-038). A value under a key named like a password is still hidden. Others are not: `.dockerconfigjson` registry credentials, or a connection string under a key like `dbconn`.
 - **Determined attacks.** The tool stops accidental leaks. It doesn't stop a person who deliberately splits up or scrambles a secret.
 

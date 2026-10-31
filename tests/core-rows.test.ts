@@ -94,6 +94,13 @@ test('a block action reports blocked; an incomplete check reports complete: fals
   assert.equal(lateReal.complete, false)
 })
 
+test('a value too long to remember is reported for the whole row, from any block; a plain row has no such field', () => {
+  const long = 'Kq7'.repeat(2731)
+  const out = redactRow(make(), row([{ type: 'text', text: `password=${long}` }, { type: 'text', text: 'after it' }]), { deadline: deadline() })
+  assert.equal(out.tooLong, true)
+  assert.equal('tooLong' in redactRow(make(), row([{ type: 'text', text: `x ${GH}` }]), { deadline: deadline() }), false)
+})
+
 test('withheldRow keeps what the engine pins and replaces the rest with a note that holds no content', () => {
   const think = { type: 'thinking', thinking: 't', signature: 's' }
   const use = { type: 'tool_use', id: 'u1', name: 'Bash', input: { command: 'ls' } }

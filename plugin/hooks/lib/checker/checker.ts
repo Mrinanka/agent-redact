@@ -162,7 +162,8 @@ export function createChecker(options: CheckerOptions = {}): { checker: Checker;
   const useIndices = HAS_INDICES && !options.noIndices
   const errors: Rejection[] = []
   const runtimes: Runtime[] = []
-  const actionOf = (id: string): Action => actions[id] ?? 'hide'
+  // Own keys only: `constructor` is a valid rule id, and a plain lookup of it finds a function.
+  const actionOf = (id: string): Action => (Object.hasOwn(actions, id) ? (actions[id] as Action) : 'hide')
 
   for (const rule of RULES) {
     if (off.has(rule.id)) continue

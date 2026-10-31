@@ -225,7 +225,7 @@ export function resolveSettings(sources: Partial<Record<SourceName, unknown>>, o
       if (!strictOnly) s.rules.actions = patch.actions
       else {
         for (const [id, action] of Object.entries(patch.actions)) {
-          const current = s.rules.actions[id] ?? 'hide'
+          const current = Object.hasOwn(s.rules.actions, id) ? (s.rules.actions[id] as Action) : 'hide'
           if (ACTION_STRICT.indexOf(action) >= ACTION_STRICT.indexOf(current)) s.rules.actions[id] = action
           else refuse('rules.actions')
         }

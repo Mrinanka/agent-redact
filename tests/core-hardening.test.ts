@@ -164,3 +164,104 @@ test('a blocked value still blocks after a worker restart', () => {
   b.importCatches(a.exportCatches())
   assert.equal(run(b, `bare ${PW}`).blocked, true)
 })
+
+// A matcher build can't be interrupted, and a hook killed mid-build sends its whole row unhidden. So
+// what the catch list may hold has to bound that build.
+
+test('a value too long to remember is still hidden, but costs no matcher build', () => {
+  const r = make()
+  const key = ['-----BEGIN', 'RSA PRIVATE', 'KEY-----'].join(' ')
+  const body = Buffer.from('some plain text that goes on and on\n'.repeat(40_000)).toString('base64')
+  const { value: out, ms } = timed(() => run(r, `${key}\n${body}`))
+  assert.ok(ms < 2000, `${ms} ms`)
+  assert.equal(out.text.includes(body.slice(100, 200)), false, 'the block is hidden in this text')
+  assert.ok(r.exportCatches().every(c => c.value.length <= 8192), 'and not remembered')
+})
+
+test('a private key of ordinary size is remembered', () => {
+  const r = make()
+  const key = ['-----BEGIN', 'RSA PRIVATE', 'KEY-----'].join(' ')
+  const end = ['-----END', 'RSA PRIVATE', 'KEY-----'].join(' ')
+  const body = Array.from({ length: 50 }, (_, i) => `${i}`.padStart(64, 'Qx7')).join('\n')
+  run(r, `${key}\n${body}\n${end}`)
+  assert.ok(r.exportCatches().some(c => c.value.length > 3000))
+})
+
+test('the catch list is capped by characters too, and the longest build stays short', () => {
+  const r = make()
+  const lines: string[] = []
+  for (let i = 0; i < 40; i++) lines.push(`password=${String(i).padStart(4, '0')}${'Kq7'.repeat(2000)}`)
+  const { value: out, ms } = timed(() => run(r, lines.join('\n')))
+  assert.ok(ms < 3000, `${ms} ms`)
+  assert.equal(out.capped, true)
+  assert.ok(r.exportCatches().filter(c => c.caught).reduce((n, c) => n + c.value.length, 0) <= 100_000)
+})
+
+// What is kept for a restart has to fit in one $.state write. The host refuses more than 4,194,304
+// characters of JSON (measured on 2.1.316, D-053), and values the catch list refused still get tags.
+
+const STATE_LIMIT = 4_194_304
+const longPassword = (i: number): string => `password=${String(i).padStart(4, '0')}${'Kq7'.repeat(2600)}`
+
+function flood(r: Redactor, rows: number): void {
+  for (let i = 0; i < rows; i++) run(r, longPassword(i))
+}
+
+test('what is kept for a restart fits the host limit, however many values were tagged', () => {
+  const r = make()
+  flood(r, 600)
+  assert.ok(JSON.stringify(r.exportCatches()).length <= STATE_LIMIT)
+})
+
+test('a catch made after the tagged values pass the limit survives a restart', () => {
+  const a = make()
+  flood(a, 600)
+  assert.equal(run(a, `password=${PW}`).text.includes(PW), false)
+  const b = make()
+  b.importCatches(JSON.parse(JSON.stringify(a.exportCatches())))
+  assert.equal(run(b, `bare ${PW} here`).text.includes(PW), false)
+})
+
+test('a value the catch list refused keeps its tag across a restart while there is room', () => {
+  const a = make()
+  flood(a, 20)
+  const refused = longPassword(19).slice('password='.length)
+  const entry = a.exportCatches().find(c => c.value === refused)
+  assert.equal(entry?.caught, false, 'the list was full by then')
+  const b = make()
+  b.importCatches(JSON.parse(JSON.stringify(a.exportCatches())))
+  assert.equal(run(b, longPassword(19)).hits[0]?.tag, entry?.tag)
+})
+
+// Not remembering a long value is a known limit (spec §22). The person has to be told it happened.
+
+const TOO_LONG = 'Kq7'.repeat(2731)
+const AT_LIMIT = `${'Kq7'.repeat(2730)}Kq`
+
+test('a value too long to remember says so, once', () => {
+  const r = make()
+  const first = run(r, `password=${TOO_LONG}`)
+  assert.equal(first.text.includes(TOO_LONG), false, 'it is hidden where it was found')
+  assert.equal(first.tooLong, true)
+  assert.equal(first.capped, false, 'the list is not full')
+  assert.equal(run(r, `password=${'Zm4'.repeat(2731)}`).tooLong, undefined, 'only warned about once')
+})
+
+test('a value at the limit is remembered, so there is nothing to say', () => {
+  const r = make()
+  const out = run(r, `password=${AT_LIMIT}`)
+  assert.equal('tooLong' in out, false)
+  assert.equal(r.exportCatches().filter(c => c.caught).length, 1)
+})
+
+test('a value too long to remember and blocked says so too', () => {
+  const r = new Redactor({ checker: createChecker({ actions: { 'password-label': 'block' } }).checker, registered: [], hints: true, allow: NO_ALLOW })
+  const out = run(r, `password=${TOO_LONG}`)
+  assert.equal(out.blocked, true)
+  assert.equal(out.tooLong, true)
+})
+
+test('a warned value is never remembered, whatever its length, so it says nothing', () => {
+  const r = new Redactor({ checker: createChecker({ actions: { 'password-label': 'warn' } }).checker, registered: [], hints: true, allow: NO_ALLOW })
+  assert.equal('tooLong' in run(r, `password=${TOO_LONG}`), false)
+})

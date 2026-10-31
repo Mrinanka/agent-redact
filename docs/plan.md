@@ -3,7 +3,7 @@
 How we build the tool described in `spec.md`, and how we prove it works.
 
 - **Status:** draft.
-- **Last updated:** 31 October 2026 (regrouped into 7 steps, D-018; scope cuts, D-019).
+- **Last updated:** 1 November 2026 (step 3 hooks, D-042; earlier: 7 steps, D-018; scope cuts, D-019).
 
 ---
 
@@ -153,7 +153,7 @@ Build in this order, testing each piece before moving on:
    - Aho-Corasick over the secrets and their encoded forms.
 2. **Decoder.** Decodes only what looks encoded, in pieces, at most 3 layers.
 3. **Plugin skeleton**, **settings** (three levels, "stricter only" rules, validation, admin locks; spec 14) and **log** (spec 16). Until step 5 builds it, `personal_data: on` shows "not available yet", so nobody believes it is working (D-037). The checker in `src/checker/` is copied or bundled into `plugin/` (mods import only files inside the plugin folder).
-4. **Hide secrets** at `session.append` and `prompt.submit` (spec 5.1).
+4. **Hide secrets** at `session.append`, `prompt.submit`, `prompt.context` and `prompt.attachment` (spec 5.1, D-042).
 5. **Check-failure behaviour** with `.catch` handlers (spec 12, R-03, R-12).
 6. **"I'm running" marker** (R-04).
 7. **Placeholders** with hints and tags, shared with subagents, plus the stable instructions note (spec 9).

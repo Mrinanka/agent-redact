@@ -54,6 +54,10 @@ function capWarning($: EngineInterface): void {
   warn($, 'catch-cap', 'the list of values caught this session is full; new ones are still hidden by their shape, but not remembered')
 }
 
+function tooLongWarning($: EngineInterface): void {
+  warn($, 'catch-too-long', 'a value over 8,192 characters was hidden here, but it is too long to remember, so a copy of it without its label or shape may not be hidden')
+}
+
 const whereOf = (e: SessionAppendInput): string => (e.origin.kind === 'tool' ? e.origin.tool : e.door)
 
 /** The tool, and the file a Read named. Redacted by the log before it is written (R-17). */
@@ -85,6 +89,7 @@ export async function cleanAppend($: EngineInterface, e: SessionAppendInput): Pr
   const where = whereWithFile(e, message)
   await report($, rt, e.door, where, res.hits)
   if (res.capped) capWarning($)
+  if (res.tooLong) tooLongWarning($)
   if (res.blocked) return withheldRow(message, BLOCKED_REASON) as unknown as Message
   if (!res.complete) {
     const held = rt.settings.on_check_failure === 'hold'
@@ -114,6 +119,7 @@ export async function cleanSubmit($: EngineInterface, e: Args<'prompt.submit'>):
   let complete = res.complete
   let blocked = res.blocked
   let capped = res.capped
+  let tooLong = res.tooLong === true
   let context: string[] | undefined
   if (e.context) {
     context = e.context.map(c => {
@@ -122,12 +128,14 @@ export async function cleanSubmit($: EngineInterface, e: Args<'prompt.submit'>):
       if (!r.complete) complete = false
       if (r.blocked) blocked = true
       if (r.capped) capped = true
+      if (r.tooLong) tooLong = true
       return r.text
     })
   }
   await saveCatches($, rt)
   await report($, rt, 'prompt', 'prompt', hits)
   if (capped) capWarning($)
+  if (tooLong) tooLongWarning($)
   if (blocked) return { drop: 'secret-shield: your message holds a secret that your settings say to block, so it was not sent.' }
   if (!complete) {
     const held = rt.settings.on_check_failure === 'hold'
@@ -154,11 +162,13 @@ export async function cleanContext($: EngineInterface, e: Context): Promise<Bloc
   const hits: Hit[] = []
   let failedCheck = false
   let capped = false
+  let tooLong = false
   const held = rt.settings.on_check_failure === 'hold'
   const blocks = e.blocks.map(b => {
     const r = rt.redactor.redactText(b.text, { deadline })
     hits.push(...r.hits)
     if (r.capped) capped = true
+    if (r.tooLong) tooLong = true
     if (r.blocked) return { name: b.name, text: '' }
     if (!r.complete) {
       failedCheck = true
@@ -169,6 +179,7 @@ export async function cleanContext($: EngineInterface, e: Context): Promise<Bloc
   await saveCatches($, rt)
   await report($, rt, 'context', 'context', hits)
   if (capped) capWarning($)
+  if (tooLong) tooLongWarning($)
   if (failedCheck) await failed($, rt, 'context', 'the project context', 'timeout', held)
   return blocks
 }
@@ -193,6 +204,7 @@ export async function cleanAttachment($: EngineInterface, e: Args<'prompt.attach
   await saveCatches($, rt)
   await report($, rt, 'attachment', e.type, res.hits)
   if (res.capped) capWarning($)
+  if (res.tooLong) tooLongWarning($)
   let text = res.text
   if (res.blocked) text = '[secret-shield withheld this content: ' + BLOCKED_REASON + ']'
   else if (!res.complete) {

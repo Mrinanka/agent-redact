@@ -88,6 +88,43 @@ test('a project cannot make a rule action weaker, only stricter', () => {
   assert.equal(r.settings.rules.actions['npm-access-token'], 'block')
 })
 
+// `constructor` is the one name on Object.prototype that a custom rule id may be, and a plain lookup
+// of it finds a function, not an action. These hold whichever way that lookup could go wrong.
+
+const PAT = ['ghp', 'Qw3rTy7UiOp9AsDf1GhJk5LzXc8VbNm2ZxCv'].join('_')
+const STARTS_EARLIER = { id: 'constructor', label: 'X', keyword: 'token', pattern: 'token ghp_[A-Za-z0-9]{36}' }
+const OWN_RULE = { id: 'constructor', label: 'X', keyword: 'zzshield', pattern: 'zzshield[A-Za-z0-9]{12}' }
+const OWN_VALUE = ['zzshield', 'Tok3nValue99'].join('')
+
+const actionsOn = (r: ReturnType<typeof resolve>, text: string): unknown[] => createChecker(checkerOptions(r.settings)).checker.scan(text, { budgetMs: 2000 }).findings.map(f => f.action)
+
+test('a project rule named constructor cannot undo a block the user set', () => {
+  const r = resolve({ user: { rules: { actions: { 'github-pat': 'block' } } }, project: { rules: { custom: [STARTS_EARLIER] } } })
+  assert.deepEqual(actionsOn(r, `token ${PAT} end`), ['block'])
+})
+
+test('a project rule named constructor cannot undo a block that managed settings locked', () => {
+  const r = resolve({ policy: { rules: { actions: { 'github-pat': 'block' } }, locked: ['rules.actions'] }, project: { rules: { custom: [STARTS_EARLIER] } } })
+  assert.deepEqual(actionsOn(r, `token ${PAT} end`), ['block'])
+})
+
+test('a custom rule named constructor hides by default, like any other rule', () => {
+  assert.deepEqual(actionsOn(resolve({ user: { rules: { custom: [OWN_RULE] } } }), `here ${OWN_VALUE} there`), ['hide'])
+})
+
+test('a project cannot weaken a rule named constructor, and is told so', () => {
+  const r = resolve({ user: { rules: { custom: [OWN_RULE] } }, project: { rules: { actions: { constructor: 'warn' } } } })
+  assert.deepEqual(actionsOn(r, `here ${OWN_VALUE} there`), ['hide'])
+  assert.ok(r.notices.some(n => n.includes('rules.actions')))
+})
+
+test('a rule named constructor can still be set: stricter by a project, anything by the user', () => {
+  const stricter = resolve({ user: { rules: { custom: [OWN_RULE] } }, project: { rules: { actions: { constructor: 'block' } } } })
+  assert.deepEqual(actionsOn(stricter, `here ${OWN_VALUE} there`), ['block'])
+  const user = resolve({ user: { rules: { custom: [OWN_RULE], actions: { constructor: 'warn' } } } })
+  assert.deepEqual(actionsOn(user, `here ${OWN_VALUE} there`), ['warn'])
+})
+
 test('R-13: only managed or user settings turn on observe mode, never project ones', () => {
   assert.equal(resolve({ project: { mode: 'observe' } }).settings.mode, 'enforce')
   assert.equal(resolve({ local: { mode: 'observe' } }).settings.mode, 'enforce')

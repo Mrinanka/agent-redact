@@ -11,6 +11,7 @@ import type { CatchEntry } from './lib/core/session.ts'
 import { checkerOptions, compileAllow, DEFAULTS, resolveSettings, type Settings, type SourceName } from './lib/core/settings.ts'
 import type { SecretEntry } from './lib/core/store.ts'
 import { loadRegisteredSecrets } from './backends.ts'
+import { writeLog } from './log-file.ts'
 import { warn } from './warn.ts'
 
 export type Runtime = {
@@ -135,12 +136,16 @@ export async function ready($: EngineInterface): Promise<Runtime> {
 
 /** Keeps the session's catches and tags in the host's memory, so a restarted worker has them. */
 export async function saveCatches($: EngineInterface, rt: Runtime): Promise<void> {
-  if (rt.redactor.persistVersion === rt.savedVersion) return
-  rt.savedVersion = rt.redactor.persistVersion
+  const version = rt.redactor.persistVersion
+  if (version === rt.savedVersion) return
   try {
     await $.state.set({ plugin: 'secret-shield', key: 'catches' }, rt.redactor.exportCatches())
+    rt.savedVersion = version
   } catch {
-    // Not fatal: the next row tries again.
+    // Not fatal, and the version stays behind, so the next row tries again (R-12: say so and log it).
+    warn($, 'catch-save', 'the values caught this session could not be kept, so a restart of the checks may forget some of them')
+    const t = await $.clock.now().catch(() => Date.now())
+    await writeLog($, [{ t, event: 'failure', mode: rt.settings.mode, detail: 'catch-save' }], text => text)
   }
 }
 

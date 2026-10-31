@@ -34,6 +34,8 @@ export type Redacted = {
   blocked: boolean
   /** True on the one call that first reached the catch cap, so the caller warns once. */
   capped: boolean
+  /** Set on the one call that first met a value too long to remember, so the caller warns once. */
+  tooLong?: true
 }
 
 export type CatchEntry = {
@@ -83,7 +85,11 @@ type Span = {
 const FORM_NAMES = ['plain', 'json-escaped', 'json-escaped-twice', 'json-ascii', 'url', 'url-lower', 'url-plus', 'url-strict', 'binary', 'hex', 'base64-0', 'base64-1', 'base64-2', 'base64url-0', 'base64url-1', 'base64url-2']
 const FORM_INDEX = new Map(FORM_NAMES.map((n, i) => [n, i]))
 const MIN_CATCH = 6
+/** A longer value is hidden where it was found, but not remembered: a matcher build can't be interrupted (D-052). */
+const MAX_CATCH_VALUE = 8192
 const MAX_VALUE_FOR_PATTERNS = 4096
+/** The host refuses a $.state write over 4,194,304 characters of JSON; this leaves room to spare (D-053). */
+const MAX_EXPORT_CHARS = 4_000_000
 const ACTION_RANK: Record<Action, number> = { warn: 0, hide: 1, block: 2 }
 
 /** A value found in a decoded buffer is UTF-8 bytes, one per character: this is how it was written. */
@@ -124,6 +130,8 @@ export class Redactor {
   private catchChars = 0
   private capWarned = false
   private cappedNow = false
+  private tooLongWarned = false
+  private tooLongNow = false
   private changes = 0
 
   constructor(o: RedactorOptions) {
@@ -131,7 +139,7 @@ export class Redactor {
     this.hints = o.hints
     this.allow = o.allow
     this.maxCatches = o.maxCatches ?? 5000
-    this.maxCatchChars = o.maxCatchChars ?? 2_000_000
+    this.maxCatchChars = o.maxCatchChars ?? 100_000
     this.random = o.random ?? (n => crypto.getRandomValues(new Uint8Array(n)))
     this.registered = o.registered
       .filter(e => e.value.length > 0)
@@ -173,6 +181,13 @@ export class Redactor {
       return
     }
     if (value.length < MIN_CATCH) return
+    if (value.length > MAX_CATCH_VALUE) {
+      if (!this.tooLongWarned) {
+        this.tooLongWarned = true
+        this.tooLongNow = true
+      }
+      return
+    }
     if (this.catches.size >= this.maxCatches || this.catchChars + value.length > this.maxCatchChars) {
       if (!this.capWarned) {
         this.capWarned = true
@@ -196,11 +211,30 @@ export class Redactor {
     return this.catchMatcher
   }
 
+  /**
+   * What a restarted worker needs, in one $.state write. Catches come first and are always kept: their
+   * caps hold them well under the limit. Tagged values fill the room left, oldest first, so a value left
+   * out only loses its tag (D-053).
+   */
   exportCatches(): CatchEntry[] {
     const out: CatchEntry[] = []
+    const tagOnly: CatchEntry[] = []
+    let chars = 0
     for (const [value, tag] of this.tags) {
+      if (value.length > MAX_CATCH_VALUE) continue
       const c = this.catches.get(value)
-      out.push(c ? { value, tag, label: c.label, ruleId: c.ruleId, showHint: c.showHint, caught: true, action: c.action } : { value, tag, label: '', ruleId: '', showHint: true, caught: false })
+      if (!c) {
+        tagOnly.push({ value, tag, label: '', ruleId: '', showHint: true, caught: false })
+        continue
+      }
+      const entry: CatchEntry = { value, tag, label: c.label, ruleId: c.ruleId, showHint: c.showHint, caught: true, action: c.action }
+      out.push(entry)
+      chars += JSON.stringify(entry).length + 1
+    }
+    for (const entry of tagOnly) {
+      chars += JSON.stringify(entry).length + 1
+      if (chars > MAX_EXPORT_CHARS) break
+      out.push(entry)
     }
     return out
   }
@@ -251,8 +285,9 @@ export class Redactor {
   }
 
   redactText(text: string, o: RedactTextOptions): Redacted {
-    const result = (t: string, hits: Hit[], complete: boolean, blocked: boolean): Redacted => ({ text: t, hits, complete, blocked, capped: this.cappedNow })
+    const result = (t: string, hits: Hit[], complete: boolean, blocked: boolean): Redacted => ({ text: t, hits, complete, blocked, capped: this.cappedNow, ...(this.tooLongNow ? { tooLong: true as const } : {}) })
     this.cappedNow = false
+    this.tooLongNow = false
     if (text === '') return result('', [], true, false)
     const spans: Span[] = []
     let complete = true

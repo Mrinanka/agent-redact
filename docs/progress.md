@@ -2,7 +2,7 @@
 
 Spec: `docs/spec.md`. Plan: `docs/plan.md`. Parked work: spec §23.
 
-**Current focus:** Step 3, Core hiding + Audit 1 (branch `step-3` from `develop`). Start with `/plan-step`.
+**Current focus:** Step 4, Rest of the main lock (branch `step-4` from `develop`). Start with `/plan-step`.
 
 ## Steps
 
@@ -11,7 +11,7 @@ Spec: `docs/spec.md`. Plan: `docs/plan.md`. Parked work: spec §23.
 | 0 | Facts | `step-0` | ☑ |
 | 1 | Test kit | `step-1` | ☑ |
 | 2 | Checker | `step-2` | ☑ |
-| 3 | Core hiding + Audit 1 | `step-3` | ☐ |
+| 3 | Core hiding + Audit 1 | `step-3` | ☑ |
 | 4 | Rest of the main lock | `step-4` | ☐ |
 | 5 | Backup lock + tuning | `step-5` | ☐ |
 | 6 | Release + Audit 2 | `step-6` | ☐ |
@@ -31,22 +31,37 @@ Bugs, unfinished bits and open questions. Features we chose not to build go in s
 - The macOS Keychain call at 1 MB was refused before it ran, and the check doesn't record why. Log the cause when the store limit is measured.
 - The probe's `turn.step` hold has no `.catch`, so it fails open. Fine for a test tool; the product's refusing hooks must have one (R-03).
 - Check 0.6: a `.catch` that spun the CPU for 2 s still had its answer used, although the documented grace is 1 s. Don't rely on the grace either way.
-- Secret store: decided in D-036 (several items, one code path). Spec §8.1 still describes one list; the step 3 plan edits it after measuring the per-item limit and read time on macOS and Linux (check 0.4).
-- The kit's `clean` mode has only run against the stand-in, because no hiding tool exists yet. Step 3 is its first real run.
 - Plan step 6 now holds the optional real-API run (moved from step 1, D-027).
-- Spec §22 doesn't list the `.txt` files in `projects/`, which hold what looks like a saved copy of large command output. Step 3 measures whether it stays raw with the tool on.
 - CI's password store and Node steps print evidence but can't fail the job. A change in them only shows if someone reads the log.
 - Killing the kit mid-run, or using `--keep`, leaves a scratch folder holding that run's fakes.
-- `personal_data` is built in step 5 (D-037). Step 3 must show "not available yet" when it is turned on.
 - Step 2 rejects 3 Gitleaks rules (D-032): `kubernetes-secret-yaml` stays out (D-038, spec §22); `facebook-access-token` has no required literal; `pkcs12-file` matches file names, not text.
 - Step 2 false alarms (typescript and @types/node sources, 2.9 MB): with file names 12 hidden (4.16 per MB); with no file name 175 (60.69 per MB), nearly all label hits on type aliases such as `export type DotToken = Token<...>`. That second figure applies to all Bash output, so step 5 should tune it.
 - With no file name, rules with a path condition still run (D-029), so `hashicorp-tf-password` hides quoted 8 to 20 character values after `password` even in non-Terraform text.
 - Repeated-line memory is keyed by line and file name, so a repeated line across different files is checked again.
 - A hit's area is the pattern's longest match on each side of the keyword. 16 rules reach up to about 32 KB on each side, so about 64 KB per hit; many such hits are bounded by the 4 s budget (`complete: false`), which step 3 must treat as a check failure (R-12).
-- The mod runtime was probed with a scratch mod under `claude plugin test` (not committed). It is the test runtime; whether the real hook runtime matches is not proven until step 3 loads the checker in a hook.
 - `tools/rules/sample.ts` builds random strings from patterns for tests only; they hold no fixed key.
 - The repeated-line skip shows no gain so far (2 MB log: 84 ms first scan, 86 ms repeat). Most likely cause, not confirmed: rules whose pattern can end in a newline count as spanning lines and always run. Step 5 should confirm it, then fix or drop the skip.
 - Unquoted values still end at a space, `;`, `,` or `&` (spec §7.1), so a password holding one is only partly hidden, or missed if the first part is under 6 characters. URL passwords under 6 characters, or holding `/`, are also left alone. A plain lowercase password after a `--flag` is left alone (D-034).
+- Once caught, always caught spreads a false alarm: with no file name, 953 of 1,010 hits in the false-alarm set were repeats of 57 values, 38 of them plain words, so a code word gets hidden through the rest of that text (350 per MB, against 60.69 for the checker alone; 5.55 with a file name). It hides too much, it doesn't leak. Step 5 should tune which values are remembered.
+- The truncated-key rule takes the base64 lines after a key as its body, even when the key was complete but JSON-escaped on one line, so a block after it is hidden too.
+- A crash leaves the marker at `running: true`, so the backup lock would stand down. Step 5 needs a freshness check.
+- `policy` settings are tested through mocks only. Step 5's managed run must prove a `secretShield` key in a real managed file.
+- `npm run plugin:typecheck` needs the API types, which only a loaded mod or the `plugin-authoring` skill provides, so it isn't in CI. `/verify` runs it.
+- Large-paste stress runs were by hand, against the kit's mock: 2 MB each, on Windows. No kit door covers them yet.
+- A hook killed outright sends its whole row unhidden under the default `allow`, whatever the cause (D-050). Anything that can't check a deadline must be bounded by size.
+- `/redact add` is step 4, so no real session has saved a list yet. Save and load are proven on all 3 stores by `tests/store-real.test.ts`.
+- A value over 8,192 characters isn't remembered (D-052, spec §22): a bare copy is neither hidden nor blocked, and the person gets a one-time warning. Keeping such values in a side list found by a plain text search would close this with no matcher build, but it reopens D-052.
+- A value over 8,192 characters gets a new tag after a worker restart, because D-052 keeps it out of `$.state`. That breaks spec §9 "the same tag within a session". It's cosmetic: nothing gets unhidden. A fix needs a synchronous fingerprint, and the only hash here is async (`store.ts`). Its entry in the `tags` map also stays for the worker's life.
+- `exportCatches` skips the catch cap for tagged values the catch list refused: in a scratch run 240,160 characters went to `$.state`, 96,064 of them real catches. Those values never reach the matcher. D-053 caps the export at 4,000,000 characters of JSON, because the host refuses a `$.state` write over 4,194,304. A tagged value past that cap gets a new tag after a restart, which is cosmetic but is a second exception to spec §9 "the same tag within a session". The `tags` map itself has no cap, so it still grows for the worker's life.
+- Fix before `/redact add` ships (step 4): a locked or timed-out store is silent on macOS and Linux. There `hasList()` reads the store, so a failure takes the quiet "no store" path in `loadList` (`src/core/store.ts:95-101`), although a list exists. On macOS `security default-keychain` also passes, so the result doesn't even say `locked`, and the plugin doesn't read `unavailable` anyway. `runtime.ts` keeps the empty list until the worker restarts, so secrets with no recognisable shape go unhidden for the session with no warning. Not live yet: nothing in the plugin calls `saveList`. Planned fix: `saveList` writes a small non-secret "a list exists" file before the index and clears it when the list is emptied; `hasList()` answers from it first, so a Linux lookup that exits 1 with no error text can't pass for "no list"; then warn, and retry the load at a limited rate, since a failed read can take 20 s. The test at `tests/core-store.test.ts:203` doesn't cover this: its fake answers `hasList()` even when locked. Real exit codes for a locked store are unverified, so step 4's test needs a really locked keychain and keyring.
+- Windows reads about 0.5 s per item, so a session with a list spends about 1 s at start, for the index and the list.
+- On a Linux machine with no keyring the store reads as `missing`, and nothing says so until `/redact doctor` exists (step 4). Spec §8.1 expects this.
+- Audit 1 ran before the last fixes. `/security-review` and `/code-review high` covered the step's code, then the too-long warning, the `constructor` fix and D-053 went in, and neither audit was run again on those. They were tested instead: 8 reverts on a scratch copy, each caught by the new tests.
+- Spec §9 still says "the same tag within a session", with no mention of the two exceptions above (values over 8,192 characters, and tagged values past D-053's cap). Rewording it needs the owner's yes.
+- The catch cap can be filled by content (D-052): one 141,000-character file of token-shaped text, or 13 long key-shaped values, fills it. For the rest of the session a password hidden beside its label shows when it appears bare later. The person is warned once, and hiding or blocking by shape keeps working. Adding this to spec §22 was recommended but not approved; the owner hasn't ruled on it.
+- A secret written inside a forged placeholder shape is treated as a placeholder, so it reaches the model and skips a `block` rule. Confirmed with an AWS key id and an upper-case registered value; mixed-case tokens stay hidden, and a later bare copy is still caught. An injected `echo` of a variable inside the shape needs no knowledge of the value, so "whoever writes it already has it" doesn't hold. It only happens on purpose, and `rev` does the same job (spec §3, §22). The recommendation was to leave the code alone; the owner hasn't ruled on it.
+- The matcher build for a registered list runs before the 4 s deadline starts, and a worker is cut off at about 6 s. Builds were only timed under Node (D-054), not in the real worker. Measure it when `/redact add` makes a saved list real (step 4).
+- `claude plugin validate` passes, but warns that `plugin/README.md` has no marketplace install line. That comes with the marketplace in step 6.
 
 ## Gotchas
 
@@ -58,7 +73,7 @@ Platform and tooling facts learned so far (from the old `lessons.md`).
 - Under `allowManagedHooksOnly`, a project's `disableAllHooks`, `--safe-mode`, `--bare` or `CLAUDE_CODE_SIMPLE=1`, a user-tier plugin loads no hooks and user settings hooks don't run. A plain markdown command still loads (checks 0.7, 0.8, 0.14).
 - The mod runtime has no Node or DOM; everything goes through `$`. A mod and its imports must sit inside the plugin folder, so `src/checker/` gets copied or bundled into `plugin/` (step 3).
 - Git for Windows sets `core.autocrlf=true`; `.gitattributes` forces LF. Test CRLF on purpose with fixtures built in the test. Count line endings with Node or `git ls-files --eol`, not `grep`.
-- `claude plugin test`: a test's own `session.append` hook that answers without `next` gets skipped, so record rows with `mock.session(on)`. A hook for a `$` call that throws makes the plugin's call reject, which is how to simulate a failing write.
+- `claude plugin test`: a test's own `session.append` hook that answers without `next` gets skipped, so record rows with `mock.session(on)`. A hook for a `$` call that throws makes the plugin's call reject, which is how to simulate a failing write. Not for `$.state`: the kit has its own store beneath the hook, so a throw is skipped and the write succeeds. Send it a value over 4,194,304 characters through `next` to get a real refusal.
 - `claude -p`: put the prompt before `--allowedTools`, which takes several values and swallows what follows.
 - `$.fs.write` replaces the whole file.
 - A mod may pass `$` only to functions declared or imported at the top of a file (not to one passed in as a parameter), and may register each event only once without a matcher. Both are load errors, which `claude plugin validate` and the tests show; type errors only show with `tsc` and the tsconfig from the types file header.
@@ -80,7 +95,12 @@ Platform and tooling facts learned so far (from the old `lessons.md`).
 - A multi-line script with backslashes and backticks can break in a shell heredoc. Write it to a scratch file and run that.
 - `tests/no-whole-fakes.test.ts` only searches tracked files, so new files pass it until they are staged. `/verify` should run it after `git add`.
 - Updating Gitleaks: remove the `gcp-api-key` allowlist from the new copy again (D-039).
+- A hook's deadline only covers work that checks it. A matcher build, a regex and any loop that doesn't check the clock run to the end, and a worker killed at about 6 s sends the row unhidden. Size-bound them.
+- A test with one fake can miss what several kinds do together: only a run with the kit's full block found the private-key case. Stress with all of them.
 - In a shell chain, a `sed` that matches nothing still succeeds. Check a test run's result, not the commands before it, before committing.
+- `npm run plugin:typecheck` needs the types path, and the skill's copy moves: `%TEMP%/claude/bundled-skills/<version>/<hash>/plugin-authoring/types/claude-code.d.ts`, where the hash changes. Find it with a wildcard, not a saved path.
+- To learn whether a command ran, parse the transcript's messages. A raw text search also matches the search itself once it is in the transcript.
+- A review finding pasted into a new session only carries what was pasted. Two "record it" items from one session never reached the docs that way.
 
 ## Session notes
 
@@ -119,16 +139,15 @@ Newest last, 3–5 lines each: what exists now and what the next session needs.
 - Decisions D-028 to D-039. The store design is settled in D-036, with spec §8.1 edited in step 3 after measuring macOS and Linux. `personal_data` moved to step 5 (D-037); `kubernetes-secret-yaml` stays rejected (D-038, spec §22).
 - Next session needs: step 3 (core hiding). Copy or bundle `src/checker/` into `plugin/`, treat `complete: false` as a check failure, show "not available yet" for `personal_data: on`, and prove the checker in a real hook.
 
-### 2026-11-01: step 3 (core hiding), part 1 (not finished, nothing committed)
-- Built with tests first: `src/core/` (`forms`, `matcher`, `decoder`, `placeholder`, `session` = Redactor, `rows`, `settings`, `log`, `note`), `tools/plugin/build.ts` (`npm run plugin:build`, copies into `plugin/hooks/lib/`), and the plugin (`plugin/hooks/*`, six hooks with `.catch`). Checker additions: `ScanOptions.budgetMs`, `convertAllowPattern`.
-- Numbers: `npm run leak-test:core` passes on Windows (0 of 84 fakes seen, 12 doors, 0 network attempts); `claude plugin test ./plugin` 6 of 6; `npm test` 600 of 600. Disk report with the tool on: 30 fakes in `projects/*.jsonl` and 6 in `projects/*.txt` (Claude Code's own records; spec §22 must list the `.txt` copies).
-- Prove-first (build step 2): the checker runs in a real hook (219 rules, create 23 ms, scan 10 ms); an unknown `secretShield` key reads back from the `user`, `project` and `local` sources (`policy` untested: needs a managed file). `$.env.get` takes a string literal.
-- Not done: the store (`src/core/store.ts` holds only the entry type; `plugin/hooks/backends.ts` is a stub returning an empty list), `tools/measure/store.ts`, `store-real` and `core-store` tests, the wip push, `measure` pipeline catch rate, plugin type-check config, CI run on 3 OSes, spec/decision-log edits (D-040 to D-045), `design-choices.md`, Audit 1.
+### 2026-11-01: step 3 (core hiding)
+- `src/core/`: `forms`, `matcher`, `decoder`, `placeholder`, `session` (Redactor), `rows`, `settings`, `log`, `note`, `store`, `backends`. `plugin/`: 7 hooks with `.catch`, and `hooks/lib/`, a copy made by `npm run plugin:build`, with the licences beside it. Checker additions: `ScanOptions.budgetMs`, `convertAllowPattern`.
+- `/verify` found real leaks, all fixed with tests in `tests/core-hardening.test.ts`: a flood of placeholder starts, misaligned or indented base64, odd hex, non-ASCII passwords, a blocked value losing its block, and a 2 MB base64 paste that killed the worker through a 5 s matcher build (D-051, D-052).
+- Store measured in CI (D-045). CI run 41242945288 on wip `330d4fd`: all 6 jobs green, leak-test:core 0 of 84 seen on 3 OSes. Later changes are in the working tree, for `/ship`.
+- Numbers: catch 135 of 138 (D-046), code set 41 of 41, false alarms 5.55 per MB with a file name.
+- Decisions D-040 to D-053. Next: `/security-review`, `/code-review high`, `/ship`.
+- A review found a project rule with the id `constructor` could undo a user's or a locked managed `block`, and a project could weaken a rule with that id; fixed with own-key lookups. A refused `$.state` write now warns, logs and retries, and the export is capped (D-053). The locked-store gap is in Known issues, for step 4.
 
-Known issues added in this part:
-- The plan's "all 138 catch-set cases" can't be met: 3 (`jfrog/base64`, `connection-string/base64`, `labelled-password/base64`) hold only a bare value in base64, with no label or shape. `tests/core-redact.test.ts` asserts 135 of 138 plus those 3 named misses. Needs the owner's decision.
-- The mod API has no file delete: the marker is rewritten as `running:false` at `session.end`, and old logs are emptied (names stay). Plan and spec R-04 say "remove".
-- Matcher build for 10,000 registered secrets (all forms, 40 characters each) took about 3 s under Node (2.6M nodes, 93 MB); the mod can run 1 to 4 times slower, near the 6 s cut-off. The registered-list cap (D-045) must come from measurements.
-- Decoder memory is about 10 bytes per decoded character per layer (cap 8M characters per layer); not tuned.
-- `settings`: managed values are the base and `locked` fixes a setting (the spec says "managed wins over everything" without saying how `locked` differs); this reading needs a decision-log entry.
-- A fake in `$.state` is held in the clear in host memory by design (catches survive a worker restart); the kit's disk search shows none on disk.
+### 2026-11-01: step 3 audit and ship
+- Audit 1 is done: `/security-review` found nothing at confidence 8 or above, and `/code-review high` gave 7 findings. Findings 1 and 3 are recorded, 2 is fixed, and 4 to 7 are rejected (D-054). Of its 4 low-confidence security notes, `constructor` is fixed and the other 3 are in Known issues. Checking them also found the `$.state` failure (D-053).
+- On the tree shipped, on Windows: 678 of 678 in `npm test`, 28 of 28 in `claude plugin test`, typecheck and plugin typecheck clean, `leak-test:core` 0 of 84 seen over 12 doors with 0 network attempts. macOS and Linux results for this tree are on the step 3 PR's CI.
+- Next session needs: step 4. Fix the locked-store gap before `/redact add` ships (Known issues), and decide the self-protection question there.

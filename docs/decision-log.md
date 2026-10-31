@@ -65,6 +65,21 @@ Tiny clarifications go under **Minor** at the bottom.
 | D-037 | `personal_data` is built in step 5 | accepted | step 2 | 2, 14 |
 | D-038 | `kubernetes-secret-yaml` stays rejected | accepted | step 2 | 22 |
 | D-039 | The `gcp-api-key` allowlist is removed from our Gitleaks copy | accepted | step 2 | 21 |
+| D-040 | `block` withholds, `warn` shows | accepted | step 3 | 14 |
+| D-041 | Settings live in Claude Code's settings files | accepted | step 3 | 14 |
+| D-042 | `prompt.context` and `prompt.attachment` are added in step 3 | accepted | step 3 | 5.1 |
+| D-043 | A compact matcher for registered and caught secrets | accepted | step 3 | 18 |
+| D-044 | Session catches and tags are kept in `$.state` | accepted | step 3 | 7, 8.1, 9 |
+| D-045 | Store piece sizes and list caps come from measurements | accepted | step 3 | 8.1, R-10 |
+| D-046 | The catch target is 135 of 138 | accepted | step 3 | 22 |
+| D-047 | The mod can't delete files: the marker says not running, old logs are emptied | accepted | step 3 | R-04, 16 |
+| D-048 | R-12: the log records every failure, the screen thins out repeats | accepted | step 3 | 12 |
+| D-049 | Managed settings are the base; `locked` is what fixes one | accepted | step 3 | 14 |
+| D-050 | `on_check_failure: allow` stays the default, with its cost now measured | accepted | step 3 | 12 |
+| D-051 | The decoder tries every alignment, and a broken project source stands alone | accepted | step 3 | 14, 18 |
+| D-052 | What is remembered is capped, because a matcher build can't be interrupted | accepted | step 3 | 7, 8.1 |
+| D-053 | What is kept for a restart is capped at one `$.state` write, catches first | accepted | step 3 | 8.1, 9, 12 |
+| D-054 | Four `/code-review high` findings from step 3 are rejected | accepted | step 3 | 8.1 |
 
 ## Entry template (short form, from D-018 on)
 
@@ -456,6 +471,111 @@ Tiny clarifications go under **Minor** at the bottom.
 - Rejected: Exempting the two files from the guard test (weakens a security test, and puts real-looking keys in the repo).
 - Evidence: `/ship` step 3, once the new files were staged; `tests/no-whole-fakes.test.ts`. `/verify` had reported the guard as passing, but it only searches tracked files and these were untracked.
 
+## D-040: `block` withholds, `warn` shows
+- Date / Step: 2026-11-01 / 3        Status: accepted
+- Decision: `hide` is a placeholder. `warn` leaves the value visible, with a warning and a log entry. `block` drops a prompt with the reason; any other row keeps its place, with its text replaced by a short note. A blocked value stays blocked when it is seen again, bare or encoded.
+- Why: Spec §14 listed the three words and never said what they do. The owner chose this option. A row can't be refused, so "withhold" is the nearest thing to blocking.
+- Rejected: `block` as `hide` on rows (the name would promise more than it does, the false comfort R-05 warns about).
+- Evidence: reference.md "a row the engine appends is never refused"; `PromptSubmitResult` `{ drop }`; `/verify` hook test, which showed a caught value losing its `block`, fixed in `src/core/session.ts`. Cost: one blocked value withholds a whole tool output.
+
+## D-041: Settings live in Claude Code's settings files
+- Date / Step: 2026-11-01 / 3        Status: accepted
+- Decision: One `secretShield` key, read with `$.settings.read({ source })`: `policy` is Managed, `user` is User, and `project`, `local` and `flag` are all treated as Project.
+- Why: No paths of our own, and it follows the managed file's OS location and `CLAUDE_CONFIG_DIR`. The owner chose this option.
+- Rejected: Our own three files (three paths per OS, and a second managed file for admins to deploy).
+- Evidence: Prove-first run: the key reads back from `user`, `project` and `local`. `policy` is not proven on a real managed file; step 5's managed run must check it. Types: "Every key crosses as the source holds it".
+
+## D-042: `prompt.context` and `prompt.attachment` are added in step 3
+- Date / Step: 2026-11-01 / 3        Status: accepted
+- Decision: Both run the same hiding code as `session.append`. Spec §5.1 lists them.
+- Why: `CLAUDE.md` text never passes `session.append`, and a rewrite there can be ignored for an attachment rendered per request. The owner chose this option.
+- Rejected: Leaving them to step 4 (a door left open that step 4 would need anyway).
+- Evidence: `claude-code.d.ts:4329`, `:4349`; reference.md; the `claude-md` and `hook-context` doors pass. A scratch door with fakes in a commit message passed too, so `gitStatus` is covered in `-p`.
+
+## D-043: A compact matcher for registered and caught secrets
+- Date / Step: 2026-11-01 / 3        Status: accepted
+- Decision: `src/core/matcher.ts` keeps Aho-Corasick in flat arrays. The checker's dense `Aho` stays for its keywords. Hex matches in either case; everything else is exact.
+- Why: The dense table is states times distinct characters. By calculation that is about 780 MB for 10,000 secrets.
+- Rejected: Reusing `Aho`, as its comment planned. A rolling hash (a shared prefix makes many candidates, so it has no linear guarantee).
+- Evidence: Build for 10,000 secrets: 1.9 s under Node, 2.6M nodes, 93 MB; the search itself is about 2 ms. The store's list cap keeps a real list far smaller (D-045).
+
+## D-044: Session catches and tags are kept in `$.state`
+- Date / Step: 2026-11-01 / 3        Status: accepted
+- Decision: Catches and tags stay in host memory for the session, so a worker killed at the 6 s mark keeps them. Registered secrets are read again from the OS store.
+- Why: A module variable dies with the worker, which would lose "once caught, always caught" and change tags mid-session. Accepted in the step 3 plan.
+- Rejected: Module variables only.
+- Evidence: Hook test "catches kept in $.state come back"; the kit's disk report shows no fake in any file of ours. Trade-off: the values sit in the clear in host memory, where another plugin can read them, which the threat model already leaves out.
+
+## D-045: Store piece sizes and list caps come from measurements
+- Date / Step: 2026-11-01 / 3        Status: accepted. Fills in D-036.
+- Decision: macOS 2,048 bytes per item, up to 50 items. Linux 4,096 bytes, up to 64. Windows one item of 256 KiB. That holds roughly 750 secrets on macOS and 1,900 on Linux and Windows, at about 100 bytes each. A longer list is refused with `StoreFull`, and the old list stays.
+- Why: About half the measured item limit on macOS and Linux. Items are capped so reading stays near 1 s at session start, and the list is capped so the matcher build stays short (D-052). The owner approved the wip push that got the numbers.
+- Rejected: The 1 MB Windows item first planned: about 7,800 secrets is a matcher build the mod might not survive. The 10,000 figure stays a speed goal for matching, as D-036 says.
+- Evidence: CI run 41242945288, `npm run measure:store`. Largest item: Keychain through `security -i` 3,840 bytes, failing at 4,096; Secret Service 8,192, failing at 8,448; DPAPI 2 MiB, the top of the range tried. Read per item: 18 ms, 11 ms, 214 to 229 ms on CI, about 500 ms on the owner's PC. `security -i` left the value in no top-level home file. The 10,000-secret build is about 1.9 s under Node.
+
+## D-046: The catch target is 135 of 138
+- Date / Step: 2026-11-01 / 3        Status: accepted
+- Decision: `jfrog/base64`, `connection-string/base64` and `labelled-password/base64` stay misses, are named in the test, and are listed in spec §22.
+- Why: Each holds only a bare value in base64: no shape, no label, nothing a decoder could recognise. The plan's "all 138" could not be met. The owner approved the recommendation.
+- Rejected: Hiding every base64 value (it would hide harmless data and break the output).
+- Evidence: `tests/core-redact.test.ts`, `npm run measure` section 6.
+
+## D-047: The mod can't delete files: the marker says not running, old logs are emptied
+- Date / Step: 2026-11-01 / 3        Status: accepted
+- Decision: At `session.end` the marker is rewritten as `running: false`, and step 5 treats that like a missing marker. Logs past `log.days` are emptied; their names stay. A removed Windows store item is an empty file. The marker is written again at the next prompt, because `/clear` starts a new session id with no `session.start`.
+- Why: `$.fs` has no delete. The owner approved the recommendation.
+- Rejected: Deleting through `$.process` (a different command on each OS for a housekeeping job).
+- Evidence: `claude-code.d.ts` `fs` noun; the session id note at `SessionEndInput`; hook test for the marker. Still open: a crash leaves `running: true`, a job for step 5 (progress, Known issues).
+
+## D-048: R-12: the log records every failure, the screen thins out repeats
+- Date / Step: 2026-11-01 / 3        Status: accepted
+- Decision: Each failure gets a log entry. The screen shows the first 3 of a kind, then every 50th with a count. Spec R-12 is reworded.
+- Why: The owner approved the recommendation. A warning on every row of a slow run would bury the screen.
+- Rejected: A warning for every failure on screen, which is what R-12 said.
+- Evidence: `plugin/hooks/warn.ts`; `/verify` found 3 `.catch` paths with no log entry, now tested in `shield.test.ts`.
+
+## D-049: Managed settings are the base; `locked` is what fixes one
+- Date / Step: 2026-11-01 / 3        Status: accepted
+- Decision: Defaults, then Managed, then User, then Project (stricter only). A setting Managed doesn't lock can be changed by the user.
+- Why: Spec §14 says the user "can change anything not locked", and an admin who wants a value fixed has `locked`. The owner approved the recommendation.
+- Rejected: Managed beating the user on every value (`locked` would then mean nothing).
+- Evidence: `src/core/settings.ts`, `tests/core-settings.test.ts`.
+
+## D-050: `on_check_failure: allow` stays the default, with its cost now measured
+- Date / Step: 2026-11-01 / 3        Status: accepted. Adds to D-005, whose reason is still not recorded.
+- Decision: The default stays `allow`. The owner approved keeping it after seeing what it costs.
+- Why: The owner approved the recommendation; no further reason was given. It stays D-005's open question.
+- Rejected: Changing the default now, with the only known trigger fixed.
+- Evidence: `/verify`: with `allow`, a 2 MB paste of an unclosed placeholder start sent 7 of 7 fakes to the model, exit 0. Fixed, but any hook killed outright sends its whole row unhidden. The deadline only covers work that checks it, so an unbounded step stays a leak, not a slowdown. Managed-mode docs still recommend `hold`.
+
+## D-051: The decoder tries every alignment, and a broken project source stands alone
+- Date / Step: 2026-11-01 / 3        Status: accepted
+- Decision: A base64 run is tried at all 4 alignments and after its first separators (past 256 KB, from its start and after separators only); hex at both. Wrapped base64 may be indented, and its short last line is read. Any try but the first must pass the printable gate, where valid UTF-8 counts as printable. A broken project source is left out alone, and only a broken Managed or User source falls back to the last good settings.
+- Why: All were leaks or weaknesses `/verify` reproduced: `id-<base64>`, indented YAML, an odd hex prefix, non-ASCII passwords. A repo could also freeze the settings by carrying a broken value. Part of the owner's approval to fix `/verify`'s findings.
+- Rejected: Splitting runs at separators only (misses a prefix with no separator).
+- Evidence: `tests/core-hardening.test.ts`. False alarms with a file name stay at 5.55 per MB.
+
+## D-052: What is remembered is capped, because a matcher build can't be interrupted
+- Date / Step: 2026-11-01 / 3        Status: accepted
+- Decision: A value over 8,192 characters is hidden where it was found, but not remembered, and it never reaches `$.state`. The catch list holds at most 5,000 values and 100,000 characters in all.
+- Why: A real 2 MB base64 paste sent 7 of 7 fakes to the model. The truncated-key rule took the block as a key body, the catch list took the 1.9 MB value, and the matcher build for its forms took 5 s in one stretch, which ended the worker. A build has no deadline check, so its size must be bounded instead.
+- Rejected: A deadline inside the build (a half-built matcher can't be used, so the row would have to wait or go without).
+- Evidence: `tests/core-hardening.test.ts`, `shield.test.ts`; CPU profile: 2.65 s in `SecretMatcher`. Real pastes of 2 MB adversarial text through the pinned Claude Code: 0 of 7 seen each, the base64 one down from 15.5 s to 2.9 s.
+
+## D-053: What is kept for a restart is capped at one `$.state` write, catches first
+- Date / Step: 2026-11-01 / 3        Status: accepted
+- Decision: `exportCatches` puts every catch first, then adds tagged values, oldest first, until the list reaches 4,000,000 characters of JSON. A tagged value left out gets a new tag after a restart; nothing is unhidden. A refused save warns, logs a failure and tries again on the next row.
+- Why: The host refuses a larger write, and the list only grows, so warning and retrying alone would fail for the rest of the session and lose any catch made after that. The owner approved this in the review of the step 3 findings.
+- Rejected: Warning and retrying with no cap (see Why). Dropping tagged values from the export altogether (a value the catch list refused would change tag after every restart).
+- Evidence: Real 2.1.316 session: `$.state.set` accepts 4,194,304 characters of JSON and refuses 4,194,305, and the old value stays. Before the fix, in a scratch run, 600 distinct private-key-shaped values of about 8 KB overflowed at row 511: all 12 earlier catches were saved, and a catch made after that was gone after a simulated restart. Caught values are capped at 100,000 characters and 5,000 entries, so they stay far under the limit. Tests in `tests/core-hardening.test.ts`, `shield.test.ts`.
+
+## D-054: Four `/code-review high` findings from step 3 are rejected
+- Date / Step: 2026-11-01 / 3        Status: accepted
+- Decision: No code change for four findings: a registered value has no size bound of its own; a Windows list over the one 256 KiB item could be read but not saved again; `npm run measure` builds a checker per Redactor; and the new hardening tests assert wall-clock limits and repeat the literal 8192.
+- Why: The owner said to ignore these after a check of each against the code. First: its premise was false, since no registered-value limit exists and 8,192 is above `MAX_VALUE_FOR_PATTERNS`, not below it. Second: no such list can exist, because nothing outside the tests calls `saveList`, and D-045 chose the cap. Third: rules compile lazily, so it doesn't recompile them all. Fourth: the literal pins D-052's number, and the tests stay far inside their limits.
+- Rejected: Fixing them in step 3 (no real failure to fix).
+- Evidence: Measured on Windows under Node in that check: a 190 KB registered value builds in 189 ms, against 763 ms for the 1,900-secret list D-045 accepted. A fresh checker takes about 2 ms; sharing one saves about 0.5 s of a 13.4 s measure run. The timing tests took at most 309 and 275 ms against limits of 2,000 and 3,000, and 652 and 556 ms with every core busy. Still open: the matcher build under the real worker (progress, Known issues).
+
 ---
 
 ## Minor
@@ -479,3 +599,7 @@ Tiny clarifications go under **Minor** at the bottom.
 - 2026-10-31 / 2: `THIRD_PARTY_LICENSES` created with Gitleaks, listing `whole-keys.ts` and the key shapes in `tests/fakes.test.ts`.
 - 2026-10-31 / 2: One item added to the speed set (`adversarial-all-keywords`); existing items and tests untouched.
 - 2026-10-31 / 2: A scratch mod under `claude plugin test` (2.1.316, Windows) showed the mod runtime has the `d` flag, sticky, lookbehind, named groups and `(?i:` modifiers, and runs the checker in 6 to 400 ms on the speed items (about 1 to 4 times Node). The checker uses none of the newer features except `d`, with a fallback.
+- 2026-11-01 / 3: The owner approved narrowing the "no Node globals" guard in `tests/plugin-build.test.ts`, whose `process.` pattern matched `$.process`, the engine's API. The change also skips a quoted event name (`on('process.run', ...)`), which the same guard tripped on in the hook tests. A test proves it still catches Node's `process`.
+- 2026-11-01 / 3: `LICENSE`, `NOTICE` and `THIRD_PARTY_LICENSES` are copied into `plugin/` by `npm run plugin:build`, because an install may copy that folder alone.
+- 2026-11-01 / 3: A 3 MB paste of `[REDACTED:` makes `claude -p` exit 1 with no request, with no plugin loaded too. It isn't the tool's doing.
+- 2026-11-01 / 3: The owner approved adding "Very long values" to spec §22 and a one-time warning when a value is too long to remember, after `/code-review high`. D-052 stands. Its "hidden where it was found" also means a bare copy later in the same text stays visible, which a scratch run showed at 8,193 characters and not at 8,192.

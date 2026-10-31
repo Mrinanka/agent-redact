@@ -10,7 +10,7 @@ const SESSION = 'sess-0001'
 
 type World = { writes: { path: string; text: string }[]; stores: unknown[]; states: unknown[]; ui: string[]; session: ReturnType<typeof mock.session> }
 
-type WorldOptions = { clock?: boolean; session?: () => string; state?: unknown; exists?: (path: string) => boolean; os?: string }
+type WorldOptions = { clock?: boolean; session?: () => string; state?: unknown; exists?: (path: string) => boolean; os?: string; refuseState?: () => boolean }
 
 function world(on: On, settings: Record<string, unknown> = {}, o: WorldOptions = {}): World {
   const writes: World['writes'] = []
@@ -29,7 +29,9 @@ function world(on: On, settings: Record<string, unknown> = {}, o: WorldOptions =
     return { value: undefined }
   })
   on('state.get', () => ({ value: { value: o.state, version: o.state ? 1 : 0 } }))
-  on('state.set', (_$, e) => {
+  on('state.set', (_$, e, next) => {
+    // A throw here only skips this hook, and the kit's own state store answers. An oversized value is refused.
+    if (o.refuseState?.()) return next({ ...e, value: 'x'.repeat(5_000_000) })
     states.push(e.value)
     return { value: { isSet: true, version: 1 } }
   })
@@ -221,6 +223,21 @@ test('catches kept in $.state come back after a worker restart, with their tags'
   expect(stored.includes('#abcdefghij234')).toBe(true)
 })
 
+test('a refused catch save says so, logs it, stores the row, and the next row tries again', async ($, on) => {
+  let refuse = true
+  const w = world(on, {}, { refuseState: () => refuse })
+  await $.session.append(toolResult(`token ${FAKE} ok`))
+  expect(w.states.length).toBe(0)
+  expect(w.ui.some(l => l.includes('could not be kept'))).toBe(true)
+  expect(w.writes.some(x => x.path.includes('log') && x.text.includes('catch-save'))).toBe(true)
+  const stored = JSON.stringify(w.session.appended())
+  expect(stored.includes(FAKE)).toBe(false)
+  expect(stored.includes('[REDACTED:')).toBe(true)
+  refuse = false
+  await $.session.append(toolResult('nothing new in this one'))
+  expect(w.states.length).toBe(1)
+})
+
 test('the log says which file, for Read, and no other tool sets the file name', async ($, on) => {
   const w = world(on)
   await $.session.append({ door: 'response', origin: { kind: 'model', model: 'm' }, uuid: 'u-2', message: { type: 'assistant', role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'Read', input: { file_path: 'config/app.env' } }] } } as SessionAppendInput)
@@ -280,4 +297,62 @@ test('no list saved: no process is started', async ($, on) => {
   await $.session.append(toolResult('nothing here'))
   expect(runs).toBe(0)
   expect(w.ui.length).toBe(0)
+})
+
+// Found by pasting large inputs through a real session: a hook that dies sends its whole row unhidden.
+
+const lines = (n: number): string => 'some plain text that goes on and on\n'.repeat(n)
+
+test('a large base64 block next to a secret: the row is still cleaned, and the hook survives', async ($, on) => {
+  const w = world(on)
+  await $.session.append(toolResult(`token ${FAKE}\n${btoa(lines(40000))}`))
+  const stored = JSON.stringify(w.session.appended())
+  expect(stored.includes(FAKE)).toBe(false)
+  expect(w.ui.join(' ').includes('a check failed')).toBe(false)
+})
+
+test('a private key in front of a large base64 block: the hook survives and hides both', async ($, on) => {
+  const w = world(on)
+  const key = ['-----BEGIN', 'RSA PRIVATE', 'KEY-----'].join(' ')
+  await $.session.append(toolResult(`token ${FAKE}\n${key}\n${btoa(lines(40000))}`))
+  const stored = JSON.stringify(w.session.appended())
+  expect(stored.includes(FAKE)).toBe(false)
+  expect(stored.includes('c29tZSBwbGFpbiB0ZXh0')).toBe(false)
+  expect(w.ui.join(' ').includes('a check failed')).toBe(false)
+})
+
+// A value past the remembering limit is a known limit (spec §22): each door has to say it happened.
+
+const TOO_LONG = 'Kq7'.repeat(2731)
+const told = (w: World): string[] => w.ui.filter(l => l.includes('too long to remember'))
+
+test('a value too long to remember: a row says so once, with no value on screen', async ($, on) => {
+  const w = world(on)
+  await $.session.append(toolResult(`password=${TOO_LONG}`))
+  await $.session.append(toolResult(`password=${TOO_LONG}`))
+  expect(told(w).length).toBe(2) // one call to warn: the log line and its toast
+  expect(w.ui.join(' ').includes(TOO_LONG)).toBe(false)
+  expect(w.ui.join(' ').includes('is full')).toBe(false)
+  expect(JSON.stringify(w.session.appended()).includes(TOO_LONG)).toBe(false)
+})
+
+test('a value too long to remember: prompt.submit says so', async ($, on) => {
+  const w = world(on)
+  on('prompt.submit', (_$, e) => ({ text: e.text }))
+  await $.prompt.submit(submit(`password=${TOO_LONG}`))
+  expect(told(w).length > 0).toBe(true)
+})
+
+test('a value too long to remember: prompt.context says so', async ($, on) => {
+  const w = world(on)
+  on('prompt.context', (_$, e) => ({ blocks: e.blocks }))
+  await $.prompt.context(context(`password=${TOO_LONG}`))
+  expect(told(w).length > 0).toBe(true)
+})
+
+test('a value too long to remember: prompt.attachment says so', async ($, on) => {
+  const w = world(on)
+  on('prompt.attachment', (_$, e) => ({ text: e.text }))
+  await $.prompt.attachment(attachment(`password=${TOO_LONG}`))
+  expect(told(w).length > 0).toBe(true)
 })

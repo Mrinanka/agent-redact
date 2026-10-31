@@ -31,9 +31,9 @@ const INDEX = 'index'
  * (D-045): well under each store's limit, and few enough that reading them at session start stays quick.
  */
 export const LIMITS: Record<StoreOS, { pieceBytes: number; maxPieces: number }> = {
-  macos: { pieceBytes: 1024, maxPieces: 64 },
-  linux: { pieceBytes: 1024, maxPieces: 64 },
-  windows: { pieceBytes: 1024 * 1024, maxPieces: 4 },
+  macos: { pieceBytes: 2048, maxPieces: 50 },
+  linux: { pieceBytes: 4096, maxPieces: 64 },
+  windows: { pieceBytes: 256 * 1024, maxPieces: 1 },
 }
 
 const POWERSHELL = ['powershell', '-NoProfile', '-NonInteractive', '-Command']

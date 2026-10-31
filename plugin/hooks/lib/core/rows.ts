@@ -34,6 +34,7 @@ export type RowResult = {
   complete: boolean
   blocked: boolean
   capped: boolean
+  tooLong?: true
 }
 
 type Slot = { get: () => string; set: (text: string) => void; file: string | undefined }
@@ -68,6 +69,7 @@ export function redactRow(r: TextRedactor, message: RowMessage, o: RowOptions): 
   let complete = true
   let blocked = false
   let capped = false
+  let tooLong = false
   let changed = false
   const startVersion = r.version
   const apply = (slot: Slot, recheck: boolean): void => {
@@ -81,6 +83,7 @@ export function redactRow(r: TextRedactor, message: RowMessage, o: RowOptions): 
     if (!res.complete) complete = false
     if (res.blocked) blocked = true
     if (res.capped) capped = true
+    if (res.tooLong) tooLong = true
   }
   const versions: number[] = []
   for (const slot of list) {
@@ -93,7 +96,7 @@ export function redactRow(r: TextRedactor, message: RowMessage, o: RowOptions): 
       if (versions[i] !== r.version) apply(slot, true)
     })
   }
-  return { message: changed ? { ...message, content: blocks } : message, changed, hits, complete, blocked, capped }
+  return { message: changed ? { ...message, content: blocks } : message, changed, hits, complete, blocked, capped, ...(tooLong ? { tooLong: true as const } : {}) }
 }
 
 const note = (reason: string): string => `[secret-shield withheld this content: ${reason}]`
