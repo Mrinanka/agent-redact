@@ -6,6 +6,9 @@ coverage/
 # Written by Claude Code beside a loaded mod
 .claude-plugin/types/
 
+# Logs written by the Step 0 probe (metadata only, never content)
+.step0-probe/
+
 # OS and editor files
 .DS_Store
 Thumbs.db

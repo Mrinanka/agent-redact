@@ -55,7 +55,7 @@ Every question to the user, whether while planning, implementing, reviewing or w
 
 - One branch per plan step: `step-0`, `step-1`, ...
 - Commit only in `/wrap-up` (`part <id>: ...`), `/spec-change` (`spec: ...`) or `/step-retro` (`retro: step <n>`).
-- Never push, force-push, amend published commits or rewrite history.
+- Never push, force-push, amend published commits or rewrite history. One exception: `/step-retro` pushes the step branch (no force) and opens its PR into `develop`. The owner reviews and merges; Claude never merges.
 
 ## Fake secrets in tests
 
@@ -70,4 +70,5 @@ Every question to the user, whether while planning, implementing, reviewing or w
 - Install dev tools: `npm ci --ignore-scripts` (exact versions from `package-lock.json`)
 - Check the plugin: `claude plugin validate ./plugin`
 - Plugin tests: `claude plugin test ./plugin`
+- Step 0 probe: `claude plugin test ./experiments/step0-probe`; run it with `claude --plugin-dir "<repo>/experiments/step0-probe"` from a scratch folder (log: `<cwd>/.step0-probe/`)
 - Leak test kit: (filled in by part 1.2)

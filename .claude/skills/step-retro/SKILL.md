@@ -50,4 +50,11 @@ After I approve:
 - Apply the approved `CLAUDE.md`, `progress.md` and command changes.
 - Commit `retro: step $ARGUMENTS` (with the Co-Authored-By line).
 
-Then suggest merging the step branch and starting the next step's branch. Spec changes still go through `/spec-change`.
+## 6. Open the pull request (I merge it)
+
+- Push the step branch: `git push -u origin step-$ARGUMENTS`. Never force-push. This is the only push Claude makes (`CLAUDE.md`, Git).
+- Open the PR with `gh pr create --base develop --head step-$ARGUMENTS`, titled `Step $ARGUMENTS: <step name from plan.md>`, with the step summary from section 2 as the body, followed by the PR attribution line.
+- Wait for CI (`gh pr checks --watch`) and report each OS's result with the PR link.
+- **Don't merge, approve or close it.** I review and merge on GitHub. If CI is red, stop and show me.
+
+Then remind me to merge, and suggest starting the next step's branch from `develop` once it's merged. Spec changes still go through `/spec-change`.

@@ -28,6 +28,21 @@ What is actually true about Claude Code, with evidence. Filled in by `/step0-che
 
 *(Filled in during part 0.F: exact managed-settings file location and contents used, VM or Windows Sandbox setup, and what was observed.)*
 
+## The probe (part 0.A)
+
+`experiments/step0-probe/` is a mod that writes one JSON line per `session.append` row: door, type, name, role, isMeta, origin (kind plus tool, model, event or name), uuid, agentId, and each block's type and size. It never writes content. It is the evidence source for 0.1, 0.5, 0.10 and later checks. See its `README.md`.
+
+- **Load:** run `claude --plugin-dir "<repo>/experiments/step0-probe"` from a scratch folder (add `-p "<prompt>"` for headless).
+- **Log:** `<cwd>/.step0-probe/<session id>.jsonl`. A `start` line (probe version, engine version, surface, interactive) is written per load, then one `row` line per row.
+- **Evidence for a row:** quote the log lines or a tally (for example, the count per door). Lines hold sizes and ids only, so they can be pasted as they are.
+- **Re-check:** rerun the same scenario with the new `claude --version` and compare the tallies.
+- **Self-test:** `claude plugin test ./experiments/step0-probe` (10 tests, including "a planted fake appears in no write").
+
 ## Notes
 
 *(Anything learned during the checks that doesn't fit a row.)*
+
+- 2026-10-31 / 0.A, first real run (2.1.316, Windows 11, `claude -p`, prompt "read a file, reply with its first word"): 17 rows. By door: 1 `queue`, 1 `prompt`, 12 `attachment`, 2 `response`, 1 `tool-result`. A grep of the log for the file's words and the reply found nothing. Observations for later checks, **not yet checked**:
+  - The `queue` row was logged before the probe's `session.start` header.
+  - Under `-p` the prompt row's origin was `unclassified`, not `sdk`.
+  - Some attachment rows (`credential_org`, `prompt_snapshot`) carry no blocks and no role.

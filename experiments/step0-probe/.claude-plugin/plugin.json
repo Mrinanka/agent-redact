@@ -1,0 +1,7 @@
+{
+  "name": "step0-probe",
+  "version": "0.1.0",
+  "description": "Step 0 probe: logs each session.append row's door, type and size (never content) to <cwd>/.step0-probe/.",
+  "author": { "name": "Mrinanka Dhar" },
+  "license": "Apache-2.0"
+}

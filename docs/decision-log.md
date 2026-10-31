@@ -40,6 +40,9 @@ Tiny clarifications go under **Minor** at the bottom.
 | D-012 | Node 24 LTS for development and CI | accepted | 0.0 | 4 |
 | D-013 | LF line endings on every OS (`.gitattributes`) | accepted | 0.0 | 4, 7, 18 |
 | D-014 | Rejected review finding: test that `.nvmrc` matches `engines` | accepted | 0.0 | — |
+| D-015 | End-of-step PRs: Claude opens the PR, the owner merges | accepted | 0.0 | — |
+| D-016 | Step 0 probe lives in `experiments/step0-probe/`, loaded with `--plugin-dir` | accepted | 0.A | 5.1 |
+| D-017 | Probe log: `<cwd>/.step0-probe/<session id>.jsonl`, metadata only | accepted | 0.A | 5.1 |
 
 ## Entry template
 
@@ -212,6 +215,39 @@ Tiny clarifications go under **Minor** at the bottom.
 - Revisit when: CI stops installing Node from `.nvmrc`, or `engine-strict` is removed.
 - Links: `.npmrc`, `.nvmrc`, `package.json`.
 
+## D-015: End-of-step PRs: Claude opens the PR, the owner merges
+- Date / Part: 2026-10-31 / 0.0. Status: accepted (recorded at the 0.A wrap-up)
+- Context: No rule said who opens and who merges the end-of-step PR into `develop`.
+- Options considered: Claude opens the PR at the end of `/step-retro` and the owner merges / the owner does both / Claude merges / a draft PR from the start of the step.
+- Decision: At the end of `/step-retro`, Claude pushes the step branch (no force), runs `gh pr create` into `develop`, and waits for CI. The owner reviews and merges; Claude never merges.
+- Why: It keeps the owner as the only gate into `develop` while saving them the routine push and PR steps. (Drafted from the session's evidence; the owner confirmed it.)
+- Evidence: A grep of CLAUDE.md, the skills and docs found no rule on PRs or merges; `gh` is logged in as Mrinanka (0.0 session notes).
+- Trade-offs: An exception to "never push", for the step branch only.
+- Revisit when: A step-retro shows PRs going stale, or the owner wants to push themselves.
+- Links: CLAUDE.md "Git"; `.claude/skills/step-retro/SKILL.md`.
+
+## D-016: Step 0 probe lives in `experiments/step0-probe/`, loaded with `--plugin-dir`
+- Date / Part: 2026-10-31 / 0.A. Status: accepted
+- Context: Parts 0.B, 0.C and 0.E extend the probe, and findings must be re-checked when the Claude Code version changes.
+- Options considered: In the repo under `experiments/` / in the session's dev-mods folder (the plugin-authoring skill's default, hot-reloaded, tied to one session id).
+- Decision: In the repo, `experiments/step0-probe/`, started with `claude --plugin-dir`.
+- Why: It's versioned, so a re-check reproduces the same evidence, and later parts can build on it. (Drafted from the session's evidence; the owner confirmed it.)
+- Evidence: `docs/findings-step0.md:9` (the re-check rule); `tsconfig.json` already excludes `experiments/`; the plugin-authoring skill (2.1.316) writes mods under `~/.claude/dev-mods/<session>/`.
+- Trade-offs: Sessions have to be started with `--plugin-dir`.
+- Revisit when: Step 0 ends (part 0.H): delete the probe or keep it for re-checks.
+- Links: spec §5.1; plan Step 0; findings "The probe"; `experiments/step0-probe/`.
+
+## D-017: Probe log: `<cwd>/.step0-probe/<session id>.jsonl`, metadata only
+- Date / Part: 2026-10-31 / 0.A. Status: accepted
+- Context: The probe needs somewhere to write one line per `session.append` row that is easy to read back and never holds content.
+- Options considered: The session's working folder / the probe's own folder / the debug log via `$.ui.log` / the plugin's `$.store`.
+- Decision: The session's working folder, gitignored, one JSONL file per session. The file is rewritten on each row, because `$.fs.write` replaces the whole file. Only fields on an allow-list are recorded, as types, ids and sizes.
+- Why: It's easy to find and stays outside the watched plugin folder, so writing it shouldn't reload the mod. (Drafted from the session's evidence; the owner confirmed it.)
+- Evidence: `claude-code.d.ts:3365` (`fs.write` replaces the whole file); plugin-authoring `reference.md:72` ("saving a file reloads the hooks module", read as applying to any file; untested); `claude-code.d.ts:3467` (`$.store` is a JSON file with a 4 MiB cap and no documented path). First real run: 17 rows logged, and a grep for the content found nothing.
+- Trade-offs: The log lands in whatever folder you test in, so use a scratch folder. Rewriting the whole file on every row costs O(n²), which is fine for a probe.
+- Revisit when: A log grows past 4 MiB (it then can't be read back, so the probe starts a new file), or the engine adds an append call.
+- Links: spec §5.1, §16; `experiments/step0-probe/hooks/register.ts`, `summarize.ts`; `.gitignore`.
+
 ---
 
 ## Minor
@@ -223,3 +259,5 @@ Tiny clarifications go under **Minor** at the bottom.
 - 2026-10-31 / 0.0: `step-0` was branched from `develop` (commit f135454), the only local branch.
 - 2026-10-31 / 0.0: GitHub repo created by the owner as `Mrinanka/agent-redact`. The repo name is not yet the product's final name (that's part 6.4; spec still says "secret-shield").
 - 2026-10-31 / 0.0: One-time exception to CLAUDE.md "Never push": the owner told Claude to push `develop` and `step-0` ("you do it man i gave you everything"). The rule itself is unchanged.
+- 2026-10-31 / 0.A: The probe records only fields on an allow-list. Any recorded string that doesn't look like a name or id is written as `(odd)`.
+- 2026-10-31 / 0.A: The probe's tests run under `claude plugin test` on the owner's machine only, because CI has no `claude` installed.
