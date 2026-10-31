@@ -34,7 +34,7 @@ When a developer types a message, or Claude reads a file or command output, the 
 **Not goals for v1**
 
 - Other AI tools (Copilot, Cursor and so on). v1 is Claude Code only.
-- Personal data like emails and phone numbers. Available as a setting, off by default.
+- Hiding personal data by default. Emails and phone numbers are checked only when the `personal_data` setting is on (D-037).
 - Reading inside images and documents. v1 can only pass them or drop them (section 6).
 - Putting secrets back into files (possible v2 setting).
 - Being a compliance certification. The tool reduces risk; it does not guarantee that no secret is ever sent.
@@ -152,9 +152,18 @@ Six checks, run in one pass over the text:
 
 A label match needs all of these:
 
-1. **A label.** Case-insensitive, matched as a whole word or as the end part of a name (`DB_PASSWORD`, `smtpPass`, `client-secret`).
+1. **A label.** Case-insensitive, matched as a whole word or as the end part of a name (`DB_PASSWORD`, `smtpPass`, `client-secret`). The label may be a quoted key, written `"password":` or, inside escaped JSON, `\"password\":` (D-031). `password`, `passwd`, `secret`, `token` and `apikey` also match with no boundary before them (`PGPASSWORD`, `authtoken`). Shorter labels don't, because they end ordinary words (`bypass`, `monkey`) (D-033).
 2. **A separator** right after it, with optional spaces: `=`, `:`, `=>`, `:=`, or a connection-string `;Key=`. A label without a separator never matches. So Python's `pass` statement and the word "password" in a sentence are left alone.
 3. **A value.** Quoted (`'...'`, `"..."`, backticks) or unquoted, up to the next space, `;`, `,`, `&`, closing bracket or end of line.
+
+Two more shapes follow the same value rules (D-031): the password in a URL (`scheme://user:password@host`, hidden when 6 characters or longer and not harmless), and a private key whose end line is missing (hidden from the header to the last base64 line).
+
+Headers and command lines (D-034), where the scheme word and the flag stay visible and only the value is hidden:
+
+- An `Authorization:` header: the value after `Bearer`, `Basic` or `Token` when it is 8 characters or longer, or a bare value that looks random.
+- `Bearer value` with no header word, when the value looks random, since prose says "bearer token".
+- A long flag ending in a strong label, with a space as the separator: `--password value`, `--api-key value`. A value of plain lowercase letters is prose ("the --password option") and is left alone.
+- The attached password of `mysql`, `mariadb` and `sshpass`: `-pvalue`, and `sshpass -p value`. Only these commands, because `-p` is a port or a parent folder nearly everywhere else.
 
 | Label strength | Labels | Hides the value when |
 |---|---|---|
@@ -163,12 +172,14 @@ A label match needs all of these:
 
 ### 7.2 Harmless values (left alone)
 
-- **Placeholders:** `your-password-here`, `<password>`, `********`, `xxxxxx`, `changeme`, `example`, `dummy`, `test`, `null`, `none`, empty values.
+- **Placeholders:** `your-password-here` (`your-` or `your_` followed by letters only), `<password>`, `********`, `xxxxxx`, `changeme`, `example`, `dummy`, `test`, `null`, `none`, empty values.
 - **Variable references:** `${VAR}`, `$VAR`, `%VAR%`, `{{ var }}`, `${{ secrets.X }}`, `process.env.X`, `os.environ["X"]`, `os.getenv(...)`, `System.getenv(...)`, `ENV["X"]`.
 - **Code, not values:**
   - Type names: `string`, `str`, `String`, `number`, `int`, `bool`, `boolean`, `bytes`, `Optional[...]`, `SecretStr`.
-  - Unquoted identifiers that are function calls or property access: `getToken()`, `config.password`, `self.secret`, `args.token`.
-  - Unquoted single identifiers in source files (`password = password`). A **quoted** value is never treated as code.
+  - Closed function calls and lookups: `getToken()`, `hash(salt, value)`, `ENV["X"]`. An unclosed bracket is a value (D-035).
+  - Dotted values that end in their own label: `config.password`, `self.secret`, `args.token`. Other dotted values and generics count as code only in a source file, since `DB_PASSWORD=Harbor.Meadow` in a `.env` file is a password (D-035).
+  - Unquoted single identifiers in source files, meaning a known source extension (`.ts`, `.py`, `.java`, and so on; not `.sh` or `.env`). A **quoted** value is never treated as code.
+  - A value equal to its own label (`password = password`), in any file.
 - Documented example keys (for example AWS's documented example access key, the one ending in `EXAMPLE`) and database URLs without a password.
 
 - **R-08** Each harmless rule **must** have a test showing it is left alone, and a matching test showing that a real-looking value in the same spot is hidden.
@@ -305,7 +316,7 @@ A project **can** add custom rules and `secret_files` patterns, and choose stric
 | `log.days` | `30` | Number of days |
 
 - **R-14** The settings file **must** be validated. A broken file shows a clear error, and the tool keeps running on the last good settings (or the defaults).
-- **R-15** Custom patterns **must** pass the same "can't get stuck" check as built-in ones (section 18) before use. A pattern that fails is rejected with a clear error.
+- **R-15** Custom patterns **must** pass the same "can't get stuck" check as built-in ones (section 18) before use, with a stricter limit because nobody reviewed them and they can start anywhere (D-032). A pattern that fails is rejected with a clear error.
 
 ## 15. Commands
 
@@ -412,6 +423,7 @@ The maintainers can't test inside every organization. So everything needed to te
 - **Safe mode** turns the main lock off. In Personal mode it turns the backup lock off too. A backup lock installed through managed settings still runs, but it can only block messages, not hide parts of them.
 - **Failed or slow checks** let content through by default (section 12).
 - **Observe mode** hides nothing, by design.
+- **Kubernetes Secret files.** The Gitleaks rule for them is left out (D-038). A value under a key named like a password is still hidden. Others are not: `.dockerconfigjson` registry credentials, or a connection string under a key like `dbconn`.
 - **Determined attacks.** The tool stops accidental leaks. It doesn't stop a person who deliberately splits up or scrambles a secret.
 
 ## 23. Later (parked)

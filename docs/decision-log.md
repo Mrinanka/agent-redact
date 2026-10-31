@@ -53,6 +53,18 @@ Tiny clarifications go under **Minor** at the bottom.
 | D-025 | Claude Code for the kit is pinned in its own lockfile folder | accepted | step 1 | 4, 20 |
 | D-026 | Network proof: proxy trap on every run, plus one Linux run with no network | accepted | step 1 | 17, 20 |
 | D-027 | The optional real-API run moves from step 1 to step 6 | accepted | step 1 | 20 |
+| D-028 | Gitleaks v8.30.1 is vendored; keywords come from the patterns; 4 rules are rejected | accepted (rejected count changed by D-032) | step 2 | 7, 18, 21 |
+| D-029 | Gitleaks allowlists by path and the `gitleaks:allow` comment are not carried over | accepted | step 2 | 3, 7 |
+| D-030 | Upstream's true/false/null allowlist is anchored; two curl rules are rewritten by hand | accepted (curl rewrite replaced by D-032) | step 2 | 7, R-15 |
+| D-031 | Password labels, URL passwords and truncated private keys | accepted | step 2 | 7.1, 7.2 |
+| D-032 | Total work limits: custom patterns, curl rules and a share of the budget per rule | accepted | step 2 | 18, R-15 |
+| D-033 | Long labels match as the end of a name with no boundary | accepted | step 2 | 7.1 |
+| D-034 | Authorization headers and command-line passwords are checked | accepted | step 2 | 7.1 |
+| D-035 | Values only read as code when they can't be passwords | accepted | step 2 | 7.2, R-08 |
+| D-036 | Registered secrets are split into several store items, one code path for everyone | accepted (spec edit in step 3) | step 2 | 8.1, R-10 |
+| D-037 | `personal_data` is built in step 5 | accepted | step 2 | 2, 14 |
+| D-038 | `kubernetes-secret-yaml` stays rejected | accepted | step 2 | 22 |
+| D-039 | The `gcp-api-key` allowlist is removed from our Gitleaks copy | accepted | step 2 | 21 |
 
 ## Entry template (short form, from D-018 on)
 
@@ -347,6 +359,103 @@ Tiny clarifications go under **Minor** at the bottom.
 - Rejected: Building a `--real` mode in step 1 (work on a mode with no tool to test; needs a real key and costs money to prove).
 - Evidence: Spec §20 ("none of it needs an API key or network access"); plan 1a; scripted replies don't apply to a real model.
 
+## D-028: Gitleaks v8.30.1 is vendored; keywords come from the patterns; 4 rules are rejected
+- Date / Step: 2026-10-31 / 2        Status: accepted
+- Decision: `third_party/gitleaks/` holds exact copies of the rule file and licence at commit 83d9cd68; `npm run rules:build` converts them into `src/checker/rules.generated.ts`. Each rule's keywords are the literals its own pattern requires (spec §18), not Gitleaks' list. 218 of 222 rules convert; 4 are rejected with a reason: `pkcs12-file` (a file name, not text), `facebook-access-token` and `sourcegraph-access-token` (no literal every match must contain), `kubernetes-secret-yaml` (adjacent whitespace repeats compound; worst case above the limit).
+- Why: Spec §18 says the list is worked out from the patterns. 33 rules get a longer keyword and 11 have an upstream keyword their pattern does not need.
+- Rejected: Trusting Gitleaks' keywords (a match could lack them, or they could miss one).
+- Evidence: `npm run measure` section 1; `tests/checker-rules.test.ts`.
+
+## D-029: Gitleaks allowlists by path and the `gitleaks:allow` comment are not carried over
+- Date / Step: 2026-10-31 / 2        Status: accepted
+- Decision: Global and rule `paths` allowlists and the `gitleaks:allow` line comment are dropped. Regex and stopword allowlists are kept. A rule's own `path` condition applies only when the file is known; with no file the rule runs.
+- Why: Claude reading `node_modules` or a lock file still sends it to the model. A comment that excuses a line would let a file switch the tool off for itself (spec §3).
+- Rejected: Copying Gitleaks' allowlists whole.
+- Evidence: Gitleaks `detect/detect.go` (comment check), `config/allowlist.go`. A side effect: with no file known, `hashicorp-tf-password` also hides quoted 8 to 20 character values after `password`.
+
+## D-030: Upstream's true/false/null allowlist is anchored; two curl rules are rewritten by hand
+- Date / Step: 2026-10-31 / 2        Status: accepted
+- Decision: The global allowlist pattern `^true|false|null$` (unanchored in the middle, so any value containing "false" was skipped) becomes `^(?:true|false|null)$`. `curl-auth-header` and `curl-auth-user` swap their nested `.*` prefix for `curl` plus up to 1000 characters. The REWRITES table in `src/checker/convert.ts` fails the build if an upstream pattern changes.
+- Why: The upstream forms nest repeats (R-15) or are wrong.
+- Rejected: Rejecting the curl rules (they find real tokens in commands).
+- Evidence: `tests/checker-rules.test.ts`.
+
+## D-031: Password labels, URL passwords and truncated private keys (spec §7)
+- Date / Step: 2026-10-31 / 2        Status: accepted
+- Decision: §7.1 also covers quoted and escaped keys (`"password":`) and URL passwords (`scheme://user:password@host`, 6 characters or more). A private key with no end line is hidden from its header to the last base64 line. In §7.2, a value equal to its own label is harmless everywhere, and "source files" means a known source extension. Weak labels need a value of 12 or more characters with 3 character classes (or 20 or more with 2 and a digit).
+- Why: The owner's answers in the step 2 plan; the thresholds are first guesses for step 5 to tune.
+- Rejected: Leaving URL passwords to the generic rule.
+- Evidence: `tests/checker-labels.test.ts`, the code set.
+
+## D-032: Total work limits: custom patterns, curl rules and a share of the budget per rule
+- Date / Step: 2026-10-31 / 2        Status: accepted. Replaces the curl rewrite in D-030 and the rejected count in D-028.
+- Decision:
+  - Custom patterns get their own limits: worst-case cost 3,000 per start and open repeats capped at 2048 characters. Built-in rules keep 5e7 and 16 KiB, with a timed worst-case test each.
+  - `curl-auth-header` and `curl-auth-user` start matching at the `-H` or `-u` flag. A new `requiresBefore` field checks for the word `curl` in the 1000 characters before it.
+  - `sourcegraph-access-token` is rewritten without its bare 40-hex alternative, so 219 rules convert and 3 are rejected.
+  - One rule may use a quarter of the time budget, so a slow rule can't stop the ones after it.
+- Why: `/verify` hung the scan with an accepted pattern: 58 KB ran past a 45 s limit against a 2 s budget. The old check limited work per start position, but a regex call can't be interrupted and one piece has 65,536 starts. A first limit of 20,000 still took 6.7 s against a 1 s budget in the tightened test. The owner: "do the reccomendation and fix whatever needs fixing".
+- Rejected: Timing a regex from outside (the mod has no way to stop one). Shrinking the curl gap (misses long commands). Keeping the bare 40-hex alternative (every git hash, and it left no keyword, so all Sourcegraph tokens were lost).
+- Evidence: `tests/checker-hardening.test.ts`; 2 MB curl floods went from 2,700 to 6,400 ms to about 60 ms. A custom pattern with an open repeat over 2048 characters stops early; that is the cost of the limit.
+
+## D-033: Long labels match as the end of a name with no boundary
+- Date / Step: 2026-10-31 / 2        Status: accepted
+- Decision: `password`, `passwd`, `secret`, `token` and `apikey` match at the end of any name. `pass`, `pw`, `pwd`, `key`, `auth` and `access` still need a boundary. A label after an escaped `\n`, `\r` or `\t` counts as having one.
+- Why: `PGPASSWORD`, `dbpassword` and `authtoken` leaked in `/verify`, though §7.1 says "end part of a name". The owner approved the recommendation.
+- Rejected: Requiring a separator or a capital (the leak). Matching every label as a suffix (`bypass`, `monkey`, `oauth`).
+- Evidence: `tests/checker-hardening.test.ts`. Together with D-034 and D-035, false alarms rose from 3.81 to 4.16 per MB with file names and from 50.98 to 60.69 with none.
+
+## D-034: Authorization headers and command-line passwords are checked
+- Date / Step: 2026-10-31 / 2        Status: accepted
+- Decision: New scanners in `src/checker/credentials.ts` and `labels.ts` for the forms in spec §7.1. Findings use the `password-label` rule id, so `rules.off` and `rules.actions` already cover them.
+- Why: `Authorization: Bearer <opaque token>`, `--password value` and `-pvalue` all leaked in `/verify`, and all three are common in logs and commands. The owner approved the recommendation.
+- Rejected: A general `-p` rule (`mkdir -p`, `docker -p8080:80`). A separate rule id for each form (more settings for the same idea).
+- Evidence: `tests/checker-hardening.test.ts`, including the prose and reference cases left alone. A plain lowercase password after a flag is not hidden, and neither is a space-separated `mysql -p value`, which mysql itself treats as a database name.
+
+## D-035: Values only read as code when they can't be passwords
+- Date / Step: 2026-10-31 / 2        Status: accepted
+- Decision: Outside a known source file, a call or lookup must close its bracket, and a dotted value must end in its own label. Generics count as code only in a source file. `process.env.X` and `import.meta.env.X` are named lookups. `your-` placeholders hold letters only.
+- Why: `Harbor.Meadow`, `Summer(2026`, `Hunter<2026>` and `your_` values leaked from `.env` files, because §7.2 treated those shapes as code in any file. The owner approved the recommendation.
+- Rejected: Leaving this to step 5 (it is a leak, not tuning).
+- Evidence: the code set stays at 41 of 41 left alone, 81 of 81 twins hidden. `token = res.data.jwt` shown through Bash is now hidden, a false alarm we accept.
+
+## D-036: Registered secrets are split into several store items, one code path for everyone
+- Date / Step: 2026-10-31 / 2        Status: accepted. Changes D-023's "one list" assumption; spec §8.1 is edited in step 3, once the numbers below exist.
+- Decision:
+  - Every list is split into pieces. A small list is simply one piece; there is no separate path for big `/redact learn` runs.
+  - Piece size is set per OS, so Windows can usually use one piece and macOS and Linux use many small ones.
+  - Step 3 first measures the exact size limit and the read time per piece on macOS and Linux. It then sets the piece size well under the limit, and a cap on the list size.
+  - `/redact learn` says so when it reaches the cap, rather than slowing down without explanation.
+  - Values go through stdin only, never on a command line. `add-generic-password -w <value>` is banned, even though it held more.
+  - Saving is all or nothing: pieces first, a small index last, so a failed save leaves the old list working.
+  - Reading proves the list is whole (piece count and checksum). A missing or bad piece gives a visible warning, never a silent partial list.
+  - Removing or shrinking the list also clears pieces no longer used.
+  - Step 3 verifies that `security -i` doesn't record the value anywhere.
+- Why: Two code paths would leave the rarely used one the least tested, where a bug can lose saved secrets. The owner first raised blocks for big `learn` runs, then chose this recommendation: "i like your suggestion".
+- Rejected: Blocks only for big `learn` runs (see Why). One item holding the whole list (check 0.4). The 10,000 figure as a store target: it is a speed goal for matching, and the store doesn't need to reach it unless the measurements allow it.
+- Evidence: findings 0.4: DPAPI round trip ok at 1 MB; `security -i` and `secret-tool` ok at 1 KB, failing at 64 KB. Weak spot: no timing yet for reading many pieces on macOS or Linux, and a slow read would slow every session start.
+
+## D-037: `personal_data` is built in step 5
+- Date / Step: 2026-10-31 / 2        Status: accepted
+- Decision: Plan step 5 builds the setting for emails and phone numbers, off by default. Until then, step 3 shows "not available yet" when someone turns it on. Spec §2 no longer lists it as both a non-goal and an available setting.
+- Why: The setting was in the spec but in no step, so step 3 would have accepted `personal_data: on` and done nothing, which is the false comfort R-05 exists to prevent. Step 5 is where false alarms get tuned, and that is the hard part. The owner chose this option.
+- Rejected: Parking it in §23 (drops something organizations may ask for). Step 4 (ships before tuning, in the largest step).
+- Evidence: spec §2, §14. Weak spot: false alarms are unmeasured, and the false-alarm set is TypeScript sources, so step 5 also measures log-like text.
+
+## D-038: `kubernetes-secret-yaml` stays rejected
+- Date / Step: 2026-10-31 / 2        Status: accepted
+- Decision: The rule is not rewritten. The gap is listed in spec §22.
+- Why: The owner chose this option. It avoids hand-written risk to speed, and hiding every value in a Secret would also hide harmless ones.
+- Rejected: Rewriting it by hand in step 5.
+- Evidence: A test Secret file through the checker: values under `password`, `db-password`, `api_key` and `tls.key` hidden; `dbconn`, `config` and `.dockerconfigjson` missed; `ca.crt` and `username` missed too, which are usually not secret. The rule's worst-case cost is over 1e12 per start.
+
+## D-039: The `gcp-api-key` allowlist is removed from our Gitleaks copy
+- Date / Step: 2026-10-31 / 2        Status: accepted. Changes "exact copies" in D-028 for `gitleaks.toml`.
+- Decision: Our copy of `gitleaks.toml` lacks that one allowlist. Its 16 entries are whole Google-API-key-shaped strings; 1 is an obvious placeholder, and whether the others are real keys is unknown. `THIRD_PARTY_LICENSES` records the change and the upstream hash. Each Gitleaks update repeats this; the guard test fails if it is forgotten.
+- Why: `CLAUDE.md` forbids committing them, and the guard test flagged both the copy and the generated rules. The owner chose this option. Dropping an excuse can only hide more: those strings are hidden if they ever appear.
+- Rejected: Exempting the two files from the guard test (weakens a security test, and puts real-looking keys in the repo).
+- Evidence: `/ship` step 3, once the new files were staged; `tests/no-whole-fakes.test.ts`. `/verify` had reported the guard as passing, but it only searches tracked files and these were untracked.
+
 ---
 
 ## Minor
@@ -367,3 +476,6 @@ Tiny clarifications go under **Minor** at the bottom.
 - 2026-10-31 / 1: The owner approved a wip commit and push of `step-1` before `/verify`, so the 3-OS CI could finish checks 0.4 and 0.13. A follow-up wip commit fixed a guard test pattern.
 - 2026-10-31 / 1: The kit's fakes are random each run; the test sets use a fixed seed, so scores compare between releases.
 - 2026-10-31 / 1: `tools/test-sets/whole-keys.ts` and the key shapes in `tests/fakes.test.ts` were written by hand after reading Gitleaks v8.30.1, and some match its patterns exactly. They count as format facts under D-008, so step 1 merges without `THIRD_PARTY_LICENSES`; step 2 lists them when it creates that file. The owner chose this option.
+- 2026-10-31 / 2: `THIRD_PARTY_LICENSES` created with Gitleaks, listing `whole-keys.ts` and the key shapes in `tests/fakes.test.ts`.
+- 2026-10-31 / 2: One item added to the speed set (`adversarial-all-keywords`); existing items and tests untouched.
+- 2026-10-31 / 2: A scratch mod under `claude plugin test` (2.1.316, Windows) showed the mod runtime has the `d` flag, sticky, lookbehind, named groups and `(?i:` modifiers, and runs the checker in 6 to 400 ms on the speed items (about 1 to 4 times Node). The checker uses none of the newer features except `d`, with a fallback.
