@@ -196,6 +196,12 @@ export const SCENARIOS: Scenario[] = [
     runs: [{ prompt: () => 'Reply with ok.', markers: ['on-runtime'], script: () => steps([]) }],
   },
   {
+    name: 'store',
+    checks: ['0.4'],
+    canaries: [],
+    runs: [{ prompt: () => 'Reply with ok.', markers: ['on-store'], script: () => steps([]) }],
+  },
+  {
     name: 'hooks-tools',
     checks: ['0.9', '0.13'],
     canaries: ['file', 'bash'],

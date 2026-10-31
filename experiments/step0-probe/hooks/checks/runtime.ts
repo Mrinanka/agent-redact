@@ -10,7 +10,7 @@ import type { EngineInterface } from 'claude-code'
 import { checkLine, isOn, label } from './common.ts'
 import { append } from '../log.ts'
 
-const DPAPI = [
+export const DPAPI = [
   '$in = [Console]::In.ReadToEnd().Trim()',
   'Add-Type -AssemblyName System.Security',
   '$b = [Convert]::FromBase64String($in)',

@@ -1,0 +1,10 @@
+{
+  "name": "leak-test-claude-pin",
+  "version": "0.0.0",
+  "description": "Pins the Claude Code version the leak test runs against, with hashes in its own lockfile. Kept apart from the root package so a normal install stays small. Install with npm ci --ignore-scripts; the kit runs the platform binary directly.",
+  "private": true,
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@anthropic-ai/claude-code": "2.1.316"
+  }
+}
