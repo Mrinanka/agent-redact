@@ -32,6 +32,9 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run typecheck
       - run: npm test
+      # Step 2 "Done when": the generated rules are current, and the numbers print.
+      - run: npm run rules:build -- --check
+      - run: npm run measure
 
   # Step 1 "Done when": against the empty tool, every planted fake is reported leaked.
   leak-test:

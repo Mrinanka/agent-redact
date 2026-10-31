@@ -2,6 +2,7 @@
 // to slow patterns down. Text is built when asked for, from a fixed seed, so each
 // run times the same bytes. Nothing here is stored in the repo.
 
+import { RULES } from '../../src/checker/rules.generated.ts'
 import { FAKE_KINDS, makeFake, seededSource, type FakeKind } from './fakes.ts'
 
 export type SpeedItem = {
@@ -88,6 +89,10 @@ export function speedSet(): SpeedItem[] {
     { id: 'adversarial-spaces-before-separator', text: memo(() => `token${' '.repeat(MIB)}`) },
     { id: 'adversarial-key-with-no-end', text: memo(() => `${BEGIN_KEY}\n${repeatTo('A', MIB)}`) },
     { id: 'adversarial-near-miss-keys', text: memo(() => repeatTo(`${'AK' + 'IA'}AAAAAAAAAAAAAAA! `, MIB)) },
+    // Every rule keyword in turn, so every rule has hits everywhere (step 2).
+    { id: 'adversarial-all-keywords', text: memo(() => repeatTo(`${[...new Set(RULES.flatMap(r => r.keywords))].join(' = ')} = `, MIB)) },
+    // The words of the rules that span the most text.
+    { id: 'adversarial-curl-flood', text: memo(() => repeatTo('curl -H ', 2 * MIB)) },
     { id: 'adversarial-nested-braces', text: memo(() => repeatTo('{{ ${', MIB)) },
   ]
 }

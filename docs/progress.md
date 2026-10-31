@@ -2,7 +2,7 @@
 
 Spec: `docs/spec.md`. Plan: `docs/plan.md`. Parked work: spec §23.
 
-**Current focus:** Step 2, Checker (branch `step-2` from `develop`). Start with `/plan-step`.
+**Current focus:** Step 3, Core hiding + Audit 1 (branch `step-3` from `develop`). Start with `/plan-step`.
 
 ## Steps
 
@@ -10,7 +10,7 @@ Spec: `docs/spec.md`. Plan: `docs/plan.md`. Parked work: spec §23.
 |---|---|---|---|
 | 0 | Facts | `step-0` | ☑ |
 | 1 | Test kit | `step-1` | ☑ |
-| 2 | Checker | `step-2` | ☐ |
+| 2 | Checker | `step-2` | ☑ |
 | 3 | Core hiding + Audit 1 | `step-3` | ☐ |
 | 4 | Rest of the main lock | `step-4` | ☐ |
 | 5 | Backup lock + tuning | `step-5` | ☐ |
@@ -31,13 +31,22 @@ Bugs, unfinished bits and open questions. Features we chose not to build go in s
 - The macOS Keychain call at 1 MB was refused before it ran, and the check doesn't record why. Log the cause when the store limit is measured.
 - The probe's `turn.step` hold has no `.catch`, so it fails open. Fine for a test tool; the product's refusing hooks must have one (R-03).
 - Check 0.6: a `.catch` that spun the CPU for 2 s still had its answer used, although the documented grace is 1 s. Don't rely on the grace either way.
-- **Decide before step 3:** spec §8.1 and D-023 assume one OS store item holds the whole list of secrets. Check 0.4 shows that fails on macOS and Linux: only about 1 KB is proven safe (exact limit unknown, between 1 KB and 64 KB), and macOS only goes higher by putting secrets on a command line. 10,000 secrets won't fit. §8.1 is unchanged until the owner decides.
+- Secret store: decided in D-036 (several items, one code path). Spec §8.1 still describes one list; the step 3 plan edits it after measuring the per-item limit and read time on macOS and Linux (check 0.4).
 - The kit's `clean` mode has only run against the stand-in, because no hiding tool exists yet. Step 3 is its first real run.
 - Plan step 6 now holds the optional real-API run (moved from step 1, D-027).
-- Step 2 must list `tools/test-sets/whole-keys.ts` and the key shapes in `tests/fakes.test.ts` in `THIRD_PARTY_LICENSES` when it creates that file (decision log, Minor).
 - Spec §22 doesn't list the `.txt` files in `projects/`, which hold what looks like a saved copy of large command output. Step 3 measures whether it stays raw with the tool on.
 - CI's password store and Node steps print evidence but can't fail the job. A change in them only shows if someone reads the log.
 - Killing the kit mid-run, or using `--keep`, leaves a scratch folder holding that run's fakes.
+- `personal_data` is built in step 5 (D-037). Step 3 must show "not available yet" when it is turned on.
+- Step 2 rejects 3 Gitleaks rules (D-032): `kubernetes-secret-yaml` stays out (D-038, spec §22); `facebook-access-token` has no required literal; `pkcs12-file` matches file names, not text.
+- Step 2 false alarms (typescript and @types/node sources, 2.9 MB): with file names 12 hidden (4.16 per MB); with no file name 175 (60.69 per MB), nearly all label hits on type aliases such as `export type DotToken = Token<...>`. That second figure applies to all Bash output, so step 5 should tune it.
+- With no file name, rules with a path condition still run (D-029), so `hashicorp-tf-password` hides quoted 8 to 20 character values after `password` even in non-Terraform text.
+- Repeated-line memory is keyed by line and file name, so a repeated line across different files is checked again.
+- A hit's area is the pattern's longest match on each side of the keyword. 16 rules reach up to about 32 KB on each side, so about 64 KB per hit; many such hits are bounded by the 4 s budget (`complete: false`), which step 3 must treat as a check failure (R-12).
+- The mod runtime was probed with a scratch mod under `claude plugin test` (not committed). It is the test runtime; whether the real hook runtime matches is not proven until step 3 loads the checker in a hook.
+- `tools/rules/sample.ts` builds random strings from patterns for tests only; they hold no fixed key.
+- The repeated-line skip shows no gain so far (2 MB log: 84 ms first scan, 86 ms repeat). Most likely cause, not confirmed: rules whose pattern can end in a newline count as spanning lines and always run. Step 5 should confirm it, then fix or drop the skip.
+- Unquoted values still end at a space, `;`, `,` or `&` (spec §7.1), so a password holding one is only partly hidden, or missed if the first part is under 6 characters. URL passwords under 6 characters, or holding `/`, are also left alone. A plain lowercase password after a `--flag` is left alone (D-034).
 
 ## Gotchas
 
@@ -66,6 +75,11 @@ Platform and tooling facts learned so far (from the old `lessons.md`).
 - Without `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, `claude -p` tries `api.anthropic.com:443` even with `ANTHROPIC_BASE_URL` set. Marketplace auto-install has its own switch (docs: env-vars).
 - OS password store limits (check 0.4): `secret-tool` and `security -i` take about 1 KB safely, not 64 KB. DPAPI took 1 MB.
 - A mutation check means nothing unless the unmutated tests pass first. Run it with a control, on its own, and with its own temp folder: a mutant that keeps scratch folders fills the real one.
+- A running regex can't be interrupted, and the mod has no timeout. A time budget only works between calls, so a pattern's worst case must be bounded per piece of text, not per start position.
+- The scan's time budget also covers the keyword pass, so a test needs a budget longer than that pass or no rule ever starts (about 60 ms on 2 MB).
+- A multi-line script with backslashes and backticks can break in a shell heredoc. Write it to a scratch file and run that.
+- `tests/no-whole-fakes.test.ts` only searches tracked files, so new files pass it until they are staged. `/verify` should run it after `git add`.
+- Updating Gitleaks: remove the `gcp-api-key` allowlist from the new copy again (D-039).
 - In a shell chain, a `sed` that matches nothing still succeeds. Check a test run's result, not the commands before it, before committing.
 
 ## Session notes
@@ -96,3 +110,11 @@ Newest last, 3–5 lines each: what exists now and what the next session needs.
 - Baseline: 98 of 98 fakes seen on Windows, macOS and Linux, and on Linux with no network; 0 network attempts (CI run 41217109599; two kit fixes after it are covered by the PR's CI). 152 tests in `npm test`, 30 under `claude plugin test`.
 - Checks 0.4, 0.11 and 0.13 finished. The store limit in 0.4 means spec §8.1 needs a decision before step 3 (Known issues).
 - Next session needs: step 2 (checker). Pin Gitleaks (v8.30.1 was read, `83d9cd68`, 222 rules), create `THIRD_PARTY_LICENSES`, and measure against `catchSet()`, `codeSet()`, `falseAlarmFiles()` and `speedSet()`.
+
+### 2026-10-31: step 2 (checker)
+- `src/checker/` (no Node imports, guarded by a test): `re/` (RE2 parser, analyzer, JS emitter), `convert.ts`, `aho.ts`, `entropy.ts`, `labels.ts`, `harmless.ts`, `private-key.ts`, `lines.ts`, `checker.ts`. `createChecker({ off, actions, custom, budgetMs })` returns `{ checker, errors }`; `checker.scan(text, { file })` returns `{ findings, complete }`.
+- `npm run rules:build` (`--check` in CI) turns `third_party/gitleaks/gitleaks.toml` (v8.30.1) into `rules.generated.ts`: 219 converted, 3 rejected (D-028 to D-032). `npm run measure` prints the numbers; it is a CI step.
+- `/verify` found 2 blockers (a stuck custom pattern, a crash at about 3 MB) and several leaks; all fixed with tests in `tests/checker-hardening.test.ts` (D-032 to D-035).
+- Numbers: catch 124 of 124 in the contexts counted (14 decoder cases left for step 3); code set 41 of 41 left alone, 81 of 81 twins hidden; speed under Node: 2 MB log about 85 ms, 2 MB one-line JSON about 90 ms, worst adversarial item about 350 ms.
+- Decisions D-028 to D-039. The store design is settled in D-036, with spec §8.1 edited in step 3 after measuring macOS and Linux. `personal_data` moved to step 5 (D-037); `kubernetes-secret-yaml` stays rejected (D-038, spec §22).
+- Next session needs: step 3 (core hiding). Copy or bundle `src/checker/` into `plugin/`, treat `complete: false` as a check failure, show "not available yet" for `personal_data: on`, and prove the checker in a real hook.

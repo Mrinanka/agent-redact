@@ -134,7 +134,7 @@ The hidden set and a large downloaded corpus are parked (spec §23, D-019).
 Build in this order, testing each piece before moving on:
 
 1. **Gitleaks rule converter** (runs at build time)
-   - Turns Gitleaks patterns into JavaScript patterns. Some (38 of 222 in the version checked) don't work as-is.
+   - Turns Gitleaks patterns into JavaScript patterns. Most don't work as-is (v8.30.1: 135 of 221 with a pattern fail as written, 23 still fail after stripping a leading `(?i)`; the checker's own parser handles them all).
    - Works out from each pattern: its required keywords, its longest possible match, and whether it can span lines.
    - Checks that each pattern can't get stuck, and rewrites or rejects any that can.
    - Every rule gets its own test.
@@ -152,7 +152,7 @@ Build in this order, testing each piece before moving on:
    - The list locked by the OS password store through `$.process` (spec 8.1, D-023; the plugin has no AES, check 0.4).
    - Aho-Corasick over the secrets and their encoded forms.
 2. **Decoder.** Decodes only what looks encoded, in pieces, at most 3 layers.
-3. **Plugin skeleton**, **settings** (three levels, "stricter only" rules, validation, admin locks; spec 14) and **log** (spec 16). The checker in `src/checker/` is copied or bundled into `plugin/` (mods import only files inside the plugin folder).
+3. **Plugin skeleton**, **settings** (three levels, "stricter only" rules, validation, admin locks; spec 14) and **log** (spec 16). Until step 5 builds it, `personal_data: on` shows "not available yet", so nobody believes it is working (D-037). The checker in `src/checker/` is copied or bundled into `plugin/` (mods import only files inside the plugin folder).
 4. **Hide secrets** at `session.append` and `prompt.submit` (spec 5.1).
 5. **Check-failure behaviour** with `.catch` handlers (spec 12, R-03, R-12).
 6. **"I'm running" marker** (R-04).
@@ -187,8 +187,9 @@ Then **Audit 1**.
 4. **Block on failure** or not, following `on_check_failure`.
 5. **Install snippets** for Personal mode (`~/.claude/settings.json`) and Managed mode.
 6. **Managed-mode run** in the Step 0 VM, starting in `observe` mode.
-7. **Tune** the rules and harmless-value list on the catch, code and false-alarm sets.
-8. **Set the targets** for speed, catch rate and false alarms from the measurements, write them into the repo, and meet them.
+7. **Personal data:** the `personal_data` setting, off by default, finds emails and phone numbers (D-037). False alarms are measured on log-like text as well, because the false-alarm set is TypeScript sources.
+8. **Tune** the rules and harmless-value list on the catch, code and false-alarm sets.
+9. **Set the targets** for speed, catch rate and false alarms from the measurements, write them into the repo, and meet them.
 
 ---
 
