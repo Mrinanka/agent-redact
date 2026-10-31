@@ -366,3 +366,4 @@ Tiny clarifications go under **Minor** at the bottom.
 - 2026-10-31 / 1: Plan 1a gained two doors, project `CLAUDE.md` and settings-hook context, and one item, the network proof (approved in the step 1 plan).
 - 2026-10-31 / 1: The owner approved a wip commit and push of `step-1` before `/verify`, so the 3-OS CI could finish checks 0.4 and 0.13. A follow-up wip commit fixed a guard test pattern.
 - 2026-10-31 / 1: The kit's fakes are random each run; the test sets use a fixed seed, so scores compare between releases.
+- 2026-10-31 / 1: `tools/test-sets/whole-keys.ts` and the key shapes in `tests/fakes.test.ts` were written by hand after reading Gitleaks v8.30.1, and some match its patterns exactly. They count as format facts under D-008, so step 1 merges without `THIRD_PARTY_LICENSES`; step 2 lists them when it creates that file. The owner chose this option.

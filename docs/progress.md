@@ -34,7 +34,7 @@ Bugs, unfinished bits and open questions. Features we chose not to build go in s
 - **Decide before step 3:** spec §8.1 and D-023 assume one OS store item holds the whole list of secrets. Check 0.4 shows that fails on macOS and Linux: only about 1 KB is proven safe (exact limit unknown, between 1 KB and 64 KB), and macOS only goes higher by putting secrets on a command line. 10,000 secrets won't fit. §8.1 is unchanged until the owner decides.
 - The kit's `clean` mode has only run against the stand-in, because no hiding tool exists yet. Step 3 is its first real run.
 - Plan step 6 now holds the optional real-API run (moved from step 1, D-027).
-- Owner to decide: `tools/test-sets/whole-keys.ts` and the key shapes in `tests/fakes.test.ts` were written by hand after reading Gitleaks v8.30.1, and some match its patterns exactly. Recommended: treat them as format facts under D-008 and list them in `THIRD_PARTY_LICENSES` when step 2 creates it.
+- Step 2 must list `tools/test-sets/whole-keys.ts` and the key shapes in `tests/fakes.test.ts` in `THIRD_PARTY_LICENSES` when it creates that file (decision log, Minor).
 - Spec §22 doesn't list the `.txt` files in `projects/`, which hold what looks like a saved copy of large command output. Step 3 measures whether it stays raw with the tool on.
 - CI's password store and Node steps print evidence but can't fail the job. A change in them only shows if someone reads the log.
 - Killing the kit mid-run, or using `--keep`, leaves a scratch folder holding that run's fakes.
