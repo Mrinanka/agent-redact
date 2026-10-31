@@ -12,3 +12,6 @@ coverage/
 # OS and editor files
 .DS_Store
 Thumbs.db
+
+# Written by Claude Code beside a loaded mod
+plugin/tsconfig.json

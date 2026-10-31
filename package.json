@@ -14,7 +14,11 @@
     "leak-test": "node tools/leak-test/run.ts",
     "leak-test:baseline": "node tools/leak-test/run.ts --expect leaks --plugin tools/leak-test/fixtures/empty-plugin",
     "rules:build": "node tools/rules/build.ts",
-    "measure": "node tools/measure/run.ts"
+    "measure": "node tools/measure/run.ts",
+    "measure:store": "node tools/measure/store.ts",
+    "plugin:build": "node tools/plugin/build.ts",
+    "plugin:typecheck": "node tools/plugin/typecheck.ts",
+    "leak-test:core": "node tools/leak-test/run.ts --plugin plugin --only prompt-typed --only prompt-pasted --only read-file --only bash-output --only bash-failed --only bash-large --only mcp-result --only subagent-read --only compaction --only claude-md --only hook-context"
   },
   "devDependencies": {
     "@types/node": "24.19.2",

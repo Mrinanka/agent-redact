@@ -20,6 +20,8 @@ Where it is used:
     SHA-256 e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf.
   - src/checker/rules.generated.ts: generated from that file by
     `npm run rules:build` (patterns converted and, for a few rules, rewritten).
+  - plugin/hooks/lib/checker/rules.generated.ts: a byte-for-byte copy of the
+    file above, shipped in the plugin. This file ships beside it.
   - tools/test-sets/whole-keys.ts and the key shapes in tests/fakes.test.ts:
     written by hand after reading the upstream patterns; some match them exactly.
 

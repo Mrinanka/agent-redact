@@ -2,8 +2,8 @@
 //
 // Case folding is ASCII only and per UTF-16 unit, so the text is never lowercased
 // as a whole (some characters change length) and offsets are always the caller's.
-// The automaton is a full table (states x distinct units), built once. Step 3
-// reuses it for registered secrets.
+// The automaton is a full table (states x distinct units), built once. It
+// is no longer reused: src/core/matcher.ts keeps flat arrays instead (D-043).
 
 const fold = (u: number): number => (u >= 0x41 && u <= 0x5a ? u + 32 : u)
 

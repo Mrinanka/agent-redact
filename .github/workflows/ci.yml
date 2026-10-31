@@ -34,6 +34,8 @@ jobs:
       - run: npm test
       # Step 2 "Done when": the generated rules are current, and the numbers print.
       - run: npm run rules:build -- --check
+      # Step 3: the plugin's copy of the sources is current.
+      - run: npm run plugin:build -- --check
       - run: npm run measure
 
   # Step 1 "Done when": against the empty tool, every planted fake is reported leaked.
@@ -61,6 +63,16 @@ jobs:
       - name: Put the pinned Claude Code on PATH
         shell: bash
         run: node tools/leak-test/claude-path.ts >> "$GITHUB_PATH"
+      # Step 3 "Done when": with the tool loaded, no planted fake reaches the model.
+      - name: Validate the plugin
+        run: claude plugin validate ./plugin
+      - name: Plugin tests
+        run: claude plugin test ./plugin
+      - name: Leak test, core hiding
+        run: npm run leak-test:core -- --require-pinned
+      # D-036: what one store item holds and how long reading many takes. Sizes and times only.
+      - name: Password store limits
+        run: npm run measure:store
       # Checks 0.4 and 0.13, finished here (D-020). The output holds labels and sizes only.
       - name: Password store and Node checks
         run: node experiments/step0-mock/run.ts runtime store
@@ -71,6 +83,7 @@ jobs:
           sudo apt-get install -y -qq libsecret-tools gnome-keyring
           node experiments/step0-mock/run.ts store
           dbus-run-session -- sh -c 'printf ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null; node experiments/step0-mock/run.ts store'
+          dbus-run-session -- sh -c 'printf ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null; npm run measure:store; node --test tests/store-real.test.ts'
       # The proxy trap only sees traffic that honours proxy settings. Here nothing can
       # leave: the namespace has only loopback, and the first line proves it.
       - name: Linux baseline with no network

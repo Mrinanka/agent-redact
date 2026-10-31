@@ -31,6 +31,8 @@ export type CheckerOptions = {
 export type ScanOptions = {
   /** The file the text came from, if known (path conditions and source-file rules use it). */
   file?: string
+  /** Time budget for this scan, in place of the checker's own. Lets several layers share one deadline. */
+  budgetMs?: number
 }
 
 export type Checker = {
@@ -156,7 +158,7 @@ type Handler =
 export function createChecker(options: CheckerOptions = {}): { checker: Checker; errors: Rejection[] } {
   const off = new Set(options.off ?? [])
   const actions = options.actions ?? {}
-  const budget = options.budgetMs ?? DEFAULT_BUDGET_MS
+  const defaultBudget = options.budgetMs ?? DEFAULT_BUDGET_MS
   const useIndices = HAS_INDICES && !options.noIndices
   const errors: Rejection[] = []
   const runtimes: Runtime[] = []
@@ -379,6 +381,7 @@ export function createChecker(options: CheckerOptions = {}): { checker: Checker;
     })
 
     let complete = true
+    const budget = scanOptions.budgetMs ?? defaultBudget
     const share = budget / RULE_SHARE
     outer: for (const [index, list] of [...areas].sort((a, b) => a[0] - b[0])) {
       const rt = runtimes[index] as Runtime

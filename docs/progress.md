@@ -118,3 +118,17 @@ Newest last, 3–5 lines each: what exists now and what the next session needs.
 - Numbers: catch 124 of 124 in the contexts counted (14 decoder cases left for step 3); code set 41 of 41 left alone, 81 of 81 twins hidden; speed under Node: 2 MB log about 85 ms, 2 MB one-line JSON about 90 ms, worst adversarial item about 350 ms.
 - Decisions D-028 to D-039. The store design is settled in D-036, with spec §8.1 edited in step 3 after measuring macOS and Linux. `personal_data` moved to step 5 (D-037); `kubernetes-secret-yaml` stays rejected (D-038, spec §22).
 - Next session needs: step 3 (core hiding). Copy or bundle `src/checker/` into `plugin/`, treat `complete: false` as a check failure, show "not available yet" for `personal_data: on`, and prove the checker in a real hook.
+
+### 2026-11-01: step 3 (core hiding), part 1 (not finished, nothing committed)
+- Built with tests first: `src/core/` (`forms`, `matcher`, `decoder`, `placeholder`, `session` = Redactor, `rows`, `settings`, `log`, `note`), `tools/plugin/build.ts` (`npm run plugin:build`, copies into `plugin/hooks/lib/`), and the plugin (`plugin/hooks/*`, six hooks with `.catch`). Checker additions: `ScanOptions.budgetMs`, `convertAllowPattern`.
+- Numbers: `npm run leak-test:core` passes on Windows (0 of 84 fakes seen, 12 doors, 0 network attempts); `claude plugin test ./plugin` 6 of 6; `npm test` 600 of 600. Disk report with the tool on: 30 fakes in `projects/*.jsonl` and 6 in `projects/*.txt` (Claude Code's own records; spec §22 must list the `.txt` copies).
+- Prove-first (build step 2): the checker runs in a real hook (219 rules, create 23 ms, scan 10 ms); an unknown `secretShield` key reads back from the `user`, `project` and `local` sources (`policy` untested: needs a managed file). `$.env.get` takes a string literal.
+- Not done: the store (`src/core/store.ts` holds only the entry type; `plugin/hooks/backends.ts` is a stub returning an empty list), `tools/measure/store.ts`, `store-real` and `core-store` tests, the wip push, `measure` pipeline catch rate, plugin type-check config, CI run on 3 OSes, spec/decision-log edits (D-040 to D-045), `design-choices.md`, Audit 1.
+
+Known issues added in this part:
+- The plan's "all 138 catch-set cases" can't be met: 3 (`jfrog/base64`, `connection-string/base64`, `labelled-password/base64`) hold only a bare value in base64, with no label or shape. `tests/core-redact.test.ts` asserts 135 of 138 plus those 3 named misses. Needs the owner's decision.
+- The mod API has no file delete: the marker is rewritten as `running:false` at `session.end`, and old logs are emptied (names stay). Plan and spec R-04 say "remove".
+- Matcher build for 10,000 registered secrets (all forms, 40 characters each) took about 3 s under Node (2.6M nodes, 93 MB); the mod can run 1 to 4 times slower, near the 6 s cut-off. The registered-list cap (D-045) must come from measurements.
+- Decoder memory is about 10 bytes per decoded character per layer (cap 8M characters per layer); not tuned.
+- `settings`: managed values are the base and `locked` fixes a setting (the spec says "managed wins over everything" without saying how `locked` differs); this reading needs a decision-log entry.
+- A fake in `$.state` is held in the clear in host memory by design (catches survive a worker restart); the kit's disk search shows none on disk.
