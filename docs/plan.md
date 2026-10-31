@@ -64,13 +64,16 @@ Done so far: repo setup (old 0.0) and the probe mod `experiments/step0-probe/` (
 | 0.11 | Claude Code accepts a local mock API through `ANTHROPIC_BASE_URL` (what env and auth it needs) | The leak test kit (20) |
 | ~~0.12~~ | ~~Lowest working Claude Code version~~ | Parked (spec §23, D-019) |
 | 0.13 | Node is available where the backup lock runs. If not, we ship it as a single program file. | Backup lock |
+| 0.14 | Whether `disableAllHooks` (in project, local or user settings), `--bare` and `CLAUDE_CODE_SIMPLE` switch off the mod and the settings hooks (D-021) | Self-protection, known limits (3, 17, 22), `doctor` |
+
+How the checks are run (D-020): headless checks run against a local mock of the model API (`experiments/step0-mock/`, `claude -p`, no API key); the interactive terminal, VS Code and the desktop app are run by hand.
 
 ### Simulating Managed mode on your own computer
 
 You don't need an organization to test Managed mode:
 1. With admin rights, create the managed settings file at the system location for your OS. Claude Code's docs list the paths (on Windows, under `C:\Program Files\ClaudeCode\`).
 2. Put the plugin in it in the `prepend` tier, with locked settings and `allowManagedHooksOnly`.
-3. Better still, do this in a throwaway VM (Windows Sandbox, UTM or VirtualBox), so your own setup stays clean.
+3. Better still, do this in a throwaway VM (Windows Sandbox, UTM or VirtualBox), so your own setup stays clean. Windows Sandbox needs Windows Pro or Enterprise; on Windows Home, use a temporary managed settings file and delete it right after the run (D-020).
 
 This tests checks 0.2, 0.7 and the Managed-mode rows of spec 5.3 the way an organization would see them.
 
@@ -145,7 +148,7 @@ Build in this order, testing each piece before moving on:
 ## Step 3: Core hiding
 
 1. **Registered-secret store and matcher**
-   - Encrypted file plus key in the OS password store (spec 8.1), using the check 0.4 result.
+   - The list locked by the OS password store through `$.process` (spec 8.1, D-023; the plugin has no AES, check 0.4).
    - Aho-Corasick over the secrets and their encoded forms.
 2. **Decoder.** Decodes only what looks encoded, in pieces, at most 3 layers.
 3. **Plugin skeleton**, **settings** (three levels, "stricter only" rules, validation, admin locks; spec 14) and **log** (spec 16). The checker in `src/checker/` is copied or bundled into `plugin/` (mods import only files inside the plugin folder).

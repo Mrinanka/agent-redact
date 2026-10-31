@@ -29,7 +29,7 @@ Tiny clarifications go under **Minor** at the bottom.
 | D-001 | License: Apache-2.0 | accepted | setup | 21 |
 | D-002 | Two audiences: Personal mode and Managed mode | accepted | setup | 5.3 |
 | D-003 | Add observe mode | accepted | setup | 13 |
-| D-004 | Store registered secrets encrypted, not as fingerprints | **proposed** | setup | 8.1 |
+| D-004 | Store registered secrets encrypted, not as fingerprints | superseded by D-023 | setup | 8.1 |
 | D-005 | Default `on_check_failure: allow` | accepted | setup | 12 |
 | D-006 | No putting secrets back into files in v1 | accepted | setup | 10 |
 | D-007 | Build workflow: slash commands, one part per session, commit at wrap-up, docs in `docs/` | superseded by D-018 | setup | — |
@@ -45,6 +45,10 @@ Tiny clarifications go under **Minor** at the bottom.
 | D-017 | Probe log: `<cwd>/.step0-probe/<session id>.jsonl`, metadata only | accepted | 0.A | 5.1 |
 | D-018 | Slim workflow: 7 steps, 3 commands, 2 audits | accepted | step 0 | — |
 | D-019 | Scope cuts: test sets and release extras parked | accepted | step 0 | 4, 7.3, 20, 23 |
+| D-020 | Step 0 checks: local mock for headless runs, temporary managed settings file, macOS/Linux finished in step 1 | accepted | step 0 | 4, 5.3, 8.1, 20 |
+| D-021 | Add check 0.14: hook kill switches (`disableAllHooks`, `--bare`, `CLAUDE_CODE_SIMPLE`) | accepted | step 0 | 3, 17, 22 |
+| D-022 | Apply the step 0 findings to the spec | accepted | step 0 | 4, 5, 6.1, 12, 18, 20, 22 |
+| D-023 | Registered secrets are locked by the OS password store, not by our own AES | accepted | step 0 | 8.1, R-10 |
 
 ## Entry template (short form, from D-018 on)
 
@@ -90,7 +94,7 @@ Tiny clarifications go under **Minor** at the bottom.
 - Links: spec §13, §20; R-13.
 
 ## D-004: Store registered secrets encrypted, not as fingerprints
-- Date / Part: 2026-10-31 / setup. Status: **proposed: needs the owner's explicit confirmation**
+- Date / Part: 2026-10-31 / setup. Status: superseded by D-023 (the plugin runtime has no AES, check 0.4)
 - Context: The first draft stored only keyed fingerprints plus length, so a copied file couldn't reveal even short passwords. The same draft wanted (a) the same cost for 10 or 10,000 secrets and (b) finding secrets inside base64 without decoding.
 - Options considered:
   - A) Keyed fingerprints at every position for every registered length. Too slow on large outputs.
@@ -272,6 +276,45 @@ Tiny clarifications go under **Minor** at the bottom.
 - Rejected: Also parking the backup lock, and Managed mode with observe mode. The owner kept both, so D-002 and D-003 stand.
 - Evidence: Spec §5.2 and §13 (what the kept features cover); plan Step 1b and the release rules (where the cut items were required).
 
+## D-020: Step 0 checks: local mock for headless runs, temporary managed settings file, macOS/Linux finished in step 1
+- Date / Step: 2026-10-31 / 0        Status: accepted
+- Decision:
+  - Headless checks (0.1, 0.3, 0.5, 0.6, 0.9, 0.11, 0.14) run against a local mock of the model API in `experiments/step0-mock/`, with `claude -p`, a dummy `ANTHROPIC_API_KEY` and no network. Claude runs them; the owner runs the interactive terminal, VS Code and desktop checks by hand.
+  - Managed mode (0.7, 0.8) is simulated with a temporary `C:\Program Files\ClaudeCode\managed-settings.json` on the owner's PC, deleted right after the run.
+  - 0.4 (macOS `security`, Linux `secret-tool`) and 0.13 close as "partly (Windows)" and are finished in step 1's 3-OS CI, where `claude` gets installed for the leak test kit.
+- Why: The mock is free, repeatable on a new Claude Code version, and seeds step 1. The owner's machine runs Windows 11 Home, which has no Windows Sandbox or Hyper-V. There's no Mac or Linux machine available now.
+- Rejected: Real API runs by the owner (cost, not repeatable). A Docker container or VirtualBox VM for Managed mode (more setup, and Docker doesn't test Windows). Blocking step 0 on macOS and Linux.
+- Evidence: Scratch run this session: `claude -p` (2.1.316, Windows) against a local Node mock, with `ANTHROPIC_BASE_URL`, a dummy key and `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`, made 2 × `POST /v1/messages?beta=true` with `x-api-key` and no `authorization` header, and the probe logged 14 rows. Managed settings paths: code.claude.com/docs/en/managed-settings. `wsl -l` lists only `docker-desktop`.
+
+## D-021: Add check 0.14: hook kill switches (`disableAllHooks`, `--bare`, `CLAUDE_CODE_SIMPLE`)
+- Date / Step: 2026-10-31 / 0        Status: accepted
+- Decision: New Step 0 check 0.14. It tests whether `disableAllHooks` (in a repo's `.claude/settings.json`, local or user settings), `--bare` and `CLAUDE_CODE_SIMPLE` switch off the mod and the settings hooks.
+- Why: Spec §3 counts "a file tells the tool to turn itself off" as in scope, and a cloned repo can carry this setting.
+- Rejected: Parking it in §23, which would leave a known kill switch undocumented through steps 3–5.
+- Evidence: code.claude.com/docs/en/hooks ("set `disableAllHooks: true` in your settings file"; it can't disable managed hooks unless set in managed settings). Scratch run this session: `claude --bare -p --plugin-dir <probe>` printed "hooks module not loaded: installed plugins that are not managed load no hooks module in this mode (--bare)".
+
+## D-022: Apply the step 0 findings to the spec
+- Date / Step: 2026-10-31 / 0        Status: accepted
+- Decision: Every [Step 0] item in the spec is replaced by what was found (findings-step0.md, checks 0.1–0.14). Main changes:
+  - §5.2: in Personal mode, safe mode turns off the backup lock too; only managed backup-lock hooks run in safe mode.
+  - §5.2: the backup lock can clean a built-in tool's output (`updatedToolOutput` in the tool's own shape).
+  - §5.3, §22, R-05: `disableAllHooks` in a project, `--bare` and `CLAUDE_CODE_SIMPLE` turn the tool off silently in Personal mode; `/redact doctor` must also work as a plain command with no hooks.
+  - R-06: read resumed history at the first `turn.start`, block by not sending the first request, and show our own message.
+  - §12, §18: the 10 s is the hook's own time; CPU-bound work is cut off at about 6 s.
+  - §4, §20: the VS Code extension has its own Claude Code version.
+  - §22: auto-memory and blocked prompts also land on disk.
+- Why: Step 0's purpose; the owner approved the list ("Yes, make them").
+- Rejected: Showing the exact wording first (the owner chose to apply directly).
+- Evidence: findings-step0.md rows 0.1–0.14; mock scenario summaries and the owner's interactive runs (2.1.316, VS Code 2.1.314, Windows 11 Home).
+
+## D-023: Registered secrets are locked by the OS password store, not by our own AES
+- Date / Step: 2026-10-31 / 0        Status: accepted. Supersedes D-004.
+- Decision: The list of registered secrets is locked by the OS password store itself (Windows DPAPI through PowerShell, macOS Keychain, Linux Secret Service), reached through `$.process`. No AES code of our own.
+- Why: The plugin runtime has no AES (`crypto.subtle` has `digest` only). The owner chose this option.
+- Rejected: Our own AES in TypeScript (hand-written crypto in a security tool is risky). Node does the AES (Node isn't on every machine, check 0.13).
+- Evidence: findings 0.4 (`claude-code.d.ts:16030`; test kit own keys `["digest"]`; live `subtle:false`; DPAPI round trip `roundtrip-ok`, ~0.8 s); 0.6 (waiting on `$.process` doesn't count toward the hook's time). Unverified: size limits of Keychain and Secret Service items, and the macOS/Linux commands (step 1).
+- With no password store, the tool runs without saved secrets instead of using a key file. The owner confirmed: "no one is running claude in a server or something with no password store".
+
 ---
 
 ## Minor
@@ -285,3 +328,6 @@ Tiny clarifications go under **Minor** at the bottom.
 - 2026-10-31 / 0.0: One-time exception to CLAUDE.md "Never push": the owner told Claude to push `develop` and `step-0` ("you do it man i gave you everything"). The rule itself is unchanged.
 - 2026-10-31 / 0.A: The probe records only fields on an allow-list. Any recorded string that doesn't look like a name or id is written as `(odd)`.
 - 2026-10-31 / 0.A: The probe's tests run under `claude plugin test` on the owner's machine only, because CI has no `claude` installed.
+- 2026-10-31 / 0: Probe bumped to 0.2.0 (opt-in checks added). The owner approved changing the one test that expected `0.1.0`. Also approved earlier: the 0.4 test expects no AES (`subtle:false`), and the 0.3 hold test no longer reads `.result` (test-kit bug).
+- 2026-10-31 / 0: Spec §7.2 no longer writes AWS's example key whole (CLAUDE.md docs rule; the secret scanner flagged it). The owner approved.
+- 2026-10-31 / 0: The probe and the step 0 mock stay in `experiments/` for re-checks when Claude Code updates (D-016 revisit; the owner didn't object).

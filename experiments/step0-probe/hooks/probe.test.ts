@@ -223,7 +223,7 @@ test('session.start writes a header with the engine version, surface and interac
   expect(w.writes.at(-1)?.path).toBe(LOG_PATH)
   expect(lastLines(w)[0]).toEqual(expect.objectContaining({
     kind: 'start',
-    probe: '0.1.0',
+    probe: '0.2.0',
     engine: '2.1.316',
     surface: 'terminal',
     interactive: true,

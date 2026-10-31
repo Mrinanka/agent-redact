@@ -7,7 +7,7 @@ An open-source tool that stops secrets from reaching the model when developers u
 - **Last updated:** 31 October 2026.
 - **Maintainer:** (your name)
 
-**How to read this spec.** Requirements a build must meet have an ID (`R-01`) and the word **must**. Tests in `plan.md` point to these IDs. **Should** means strongly recommended but not release-blocking. Anything marked **[Step 0]** is a belief about Claude Code that must be confirmed on a real machine before building on it (see `plan.md`, Step 0).
+**How to read this spec.** Requirements a build must meet have an ID (`R-01`) and the word **must**. Tests in `plan.md` point to these IDs. **Should** means strongly recommended but not release-blocking. Facts about Claude Code were checked on a real machine in Step 0; the evidence is in `docs/findings-step0.md`, and a check number (`0.4`) points to its row.
 
 **About the name.** "secret-shield" is a working name. Before the first public release, pick a final name that:
 - does not contain "Claude" or "Anthropic" (trademarks; "for Claude Code" in the description is fine)
@@ -56,7 +56,7 @@ When a developer types a message, or Claude reads a file or command output, the 
 | **Surfaces** | The Claude Code terminal, the VS Code extension and the Code tab of the desktop app. Scripted runs (`claude -p`) too. |
 | **Not covered** | claude.ai chat. Claude Code on the web and Agent SDK hosts, unless listed in the tested-versions list. |
 | **Systems** | macOS, Windows and Linux, all first-class. That includes WSL and devcontainers. CI runs on all three. |
-| **Claude Code versions** | A **tested versions** list is published with each release (section 20). v1 supports the Claude Code version pinned for testing (and newer, with the R-01 warning). Hunting for the lowest working version is parked (section 23, D-019). **[Step 0]** Earlier figures (2.1.287 for mods, 2.1.295 for "block if this check fails") have not been confirmed. Development so far has been checked against 2.1.316. |
+| **Claude Code versions** | A **tested versions** list is published with each release (section 20). v1 supports the Claude Code version pinned for testing (and newer, with the R-01 warning). Hunting for the lowest working version is parked (section 23, D-019). Earlier figures (2.1.287 for mods, 2.1.295 for "block if this check fails") were never checked, and won't be in v1 (section 23). Step 0 was checked against 2.1.316. The VS Code extension runs its own copy of Claude Code, which can be a different version from the CLI (2.1.314 when the CLI was 2.1.316); the tested-versions list names both. |
 
 - **R-01** At session start, the tool **must** show a one-line warning when the Claude Code version is not on its tested list, and keep working.
 
@@ -68,9 +68,9 @@ A Claude Code plugin with a hooks module, written in TypeScript. It uses these h
 
 | Hook | Used for |
 |---|---|
-| `session.append` | **All hiding.** Every row the conversation keeps passes through it before it is stored or sent: typed prompts, slash-command output, tool results (including errors), attachments, injected context, compaction summaries, and the same rows inside subagents. |
+| `session.append` | **All hiding.** Every row the conversation keeps passes through it before it is stored or sent: typed prompts, slash-command output, tool results (including errors), attachments, injected context (including settings hooks' context), queued messages, compaction summaries, and the same rows inside subagents (check 0.1). |
 | `prompt.submit` | Hides secrets in the prompt text before it is recorded anywhere, including the message-queue record. |
-| `prompt.mention` | `@` files: points the read at a redacted temporary copy, or refuses it (section 6). **[Step 0]** Confirm this works for a plugin in the user tier. |
+| `prompt.mention` | `@` files: points the read at a redacted temporary copy, or refuses it (section 6). Works for a plugin in the user tier (check 0.2). The model sees the copy's path, so the copy's name **must not** reveal that it is a copy, and the model's own Read of the real file is hidden at `session.append`. |
 | `tool.call` | Outbound check (section 11), self-protection (section 17), overwrite guard (section 10). |
 | `prompt.compose` | Adds the short placeholder note to Claude's instructions. The note **must** be the same for the whole thread, because changing it later breaks the prompt cache. |
 | Slash commands | `/redact` and its subcommands (section 15). |
@@ -80,13 +80,16 @@ A Claude Code plugin with a hooks module, written in TypeScript. It uses these h
 
 ### 5.2 Backup lock (settings hooks)
 
-Settings-file hooks (`UserPromptSubmit`, `PreToolUse`, `PostToolUse`) that run the same checker with Node. They only act when the main lock isn't running, for example in safe mode, after a crash, or when an admin policy blocks plugin hooks.
+Settings-file hooks (`UserPromptSubmit`, `PreToolUse`, `PostToolUse`) that run the same checker with Node. They only act when the main lock isn't running, for example after a crash, or when an admin policy blocks plugin hooks.
+
+**Safe mode (check 0.8).** `--safe-mode` turns off user settings hooks along with plugins. So in Personal mode, safe mode turns off **both** locks. Only backup-lock hooks installed through managed settings still run in safe mode.
 
 | Can do | Cannot do (or limited) |
 |---|---|
 | Block a prompt that contains a secret | Hide part of a prompt and let the rest through |
-| Outbound check before a tool runs | Rewrite a built-in tool's output after it runs **[Step 0]** |
-| Change a tool's input before it runs (for example, pipe a command's output through the checker) **[Step 0]** | Cover `@` files, attachments or compaction summaries |
+| Outbound check before a tool runs | Cover `@` files, attachments or compaction summaries |
+| Change a tool's input before it runs (check 0.9) | |
+| Clean a tool's output after it runs, built-in tools included, by returning the tool's own result with secrets replaced. The result **must** keep the tool's shape; any other value is ignored (check 0.9). | |
 
 - **R-04** The main lock **must** write an "I'm running" marker per session. The backup lock **must** check for the marker and do nothing when it is there, and switch to strict mode for that session when it is missing.
 
@@ -97,12 +100,14 @@ Settings-file hooks (`UserPromptSubmit`, `PreToolUse`, `PostToolUse`) that run t
 | Who installs | The developer, from the plugin marketplace | An admin, through managed settings |
 | Plugin tier | `user`: other plugins installed in higher tiers run first and could skip it | `prepend`: runs first, and no user plugin can skip it |
 | Messages, files read, command output | Hidden | Hidden |
-| `@` files | Hidden through `prompt.mention` **[Step 0]**. If that fails: listed as a known limit | Hidden |
-| Compaction summaries | Hidden through `session.append` **[Step 0]** | Hidden |
+| `@` files | Hidden through `prompt.mention` (check 0.2) | Hidden |
+| Compaction summaries | Hidden through `session.append` (check 0.1) | Hidden |
 | Can the user switch it off? | Yes | No. Settings can be locked |
-| If the organization sets `allowManagedHooksOnly` | **Does nothing.** User-tier plugins load no hooks. `/redact doctor` must say so. | Works |
+| If the organization sets `allowManagedHooksOnly` | **Does nothing.** User-tier plugins load no hooks and user settings hooks don't run (check 0.7). A plain command (no hooks) still loads and says so. | Works |
+| If a project's `.claude/settings.json` (or `settings.local.json`) sets `disableAllHooks` | **Does nothing**, silently. Both locks are off (check 0.14). | Works: a project can't turn off managed hooks |
+| `--safe-mode`, `--bare`, `CLAUDE_CODE_SIMPLE=1` | **Does nothing** (checks 0.8, 0.14) | Safe mode: managed backup-lock hooks still run |
 
-- **R-05** When the tool can't run its hooks (for example under `allowManagedHooksOnly` in Personal mode), it **must** say so plainly in `/redact doctor` and, where possible, at session start. Users must never believe they are protected when they aren't.
+- **R-05** When the tool can't run its hooks (for example under `allowManagedHooksOnly`, `disableAllHooks` or `--safe-mode` in Personal mode), it **must** say so plainly where possible. Users must never believe they are protected when they aren't. When hooks are blocked, none of the tool's code runs (checks 0.7, 0.14), so `/redact doctor` **must** also work as a plain command without hooks, and say when the hooks are not running.
 
 ## 6. What gets checked
 
@@ -122,7 +127,7 @@ Settings-file hooks (`UserPromptSubmit`, `PreToolUse`, `PostToolUse`) that run t
 
 Rows loaded by `/resume` are **not** passed through `session.append`. Claude Code sends them as they were stored. A session from before the tool was installed, or from before a secret was registered, can therefore contain raw secrets.
 
-- **R-06** When a session is resumed, the tool **must** scan the loaded history. If it finds a secret, it **must** block the next prompt and tell the user: "This session's history contains N secrets that the model would see again. Start a new session (or `/redact allow` to continue anyway)." **[Step 0]** Confirm that a plugin can read the loaded history before the first request.
+- **R-06** When a session is resumed, the tool **must** scan the loaded history. If it finds a secret, it **must** block the next prompt and tell the user: "This session's history contains N secrets that the model would see again. Start a new session (or `/redact allow` to continue anyway)." How (check 0.3): read the history at the first `turn.start` (after an in-session `/resume`, `session.start` has run before the history loads), and block by answering the first request without sending it. Claude Code shows nothing when a request is held, so the tool **must** show its own message.
 
 ### 6.2 Secrets registered mid-session
 
@@ -164,7 +169,7 @@ A label match needs all of these:
   - Type names: `string`, `str`, `String`, `number`, `int`, `bool`, `boolean`, `bytes`, `Optional[...]`, `SecretStr`.
   - Unquoted identifiers that are function calls or property access: `getToken()`, `config.password`, `self.secret`, `args.token`.
   - Unquoted single identifiers in source files (`password = password`). A **quoted** value is never treated as code.
-- Documented example keys (for example AWS's `AKIAIOSFODNN7EXAMPLE`) and database URLs without a password.
+- Documented example keys (for example AWS's documented example access key, the one ending in `EXAMPLE`) and database URLs without a password.
 
 - **R-08** Each harmless rule **must** have a test showing it is left alone, and a matching test showing that a real-looking value in the same spot is hidden.
 
@@ -183,16 +188,16 @@ An earlier design stored only keyed fingerprints. That conflicts with two other 
 
 | Part | Design |
 |---|---|
-| At rest | One file, encrypted with AES-256-GCM. Each entry holds the value, a label and the date added. |
-| Key | 256-bit random key, kept in the OS password store: macOS Keychain (`security`), Windows DPAPI (current user, through PowerShell), Linux Secret Service (`secret-tool`). |
-| No password store (headless Linux, some containers) | Key file with owner-only permissions, plus a warning in `/redact doctor` |
+| At rest | The list of secrets (each with a label and the date added) is locked by the OS password store itself: Windows DPAPI (current user, through PowerShell), macOS Keychain (`security`), Linux Secret Service (`secret-tool`). The plugin can't encrypt on its own: its runtime has no AES (check 0.4). |
+| How the plugin reaches it | `$.process.run`. On Windows a DPAPI round trip took about 0.8 s, which doesn't count toward a hook's time limit (checks 0.4, 0.6). macOS and Linux are confirmed in step 1 (D-020). |
+| No password store (headless Linux, some containers) | The tool keeps working without saved secrets (session catches still work) and `/redact doctor` warns. A plaintext key file is not used. |
 | In use | Decrypted into memory when the session starts, never written to disk in plain form |
 | Session catches (check 4) | Memory only, for that session |
 
 **Trade-off on record:** someone running as the same user can decrypt the file, just as they can read `.env`. This protects against copying the file elsewhere, not against malware already running as the user.
 
 - **R-09** The tool **must** never write a registered or caught secret to disk unencrypted. That includes logs, reports, temp files and the marker.
-- **R-10** **[Step 0]** Confirm the mod runtime offers WebCrypto (AES-GCM, secure random) and `$.process` for calling the OS password store. If not, the backup lock's Node helper does the key handling.
+- **R-10** Registered secrets **must** be locked by the OS password store, reached through `$.process` (D-023). The plugin runtime has secure random numbers but no AES (check 0.4).
 
 ## 9. What Claude sees
 
@@ -241,7 +246,7 @@ Admins can lock this setting.
 
 ## 12. When a check fails or takes too long
 
-Claude Code gives each hook **10 seconds**. A hook that throws, returns the wrong shape or runs out of time is skipped, and by default the content goes through. A `.catch` handler gets **1 more second** to answer instead.
+Claude Code gives each hook **10 seconds of its own time**: time spent waiting on Claude Code (`next`, `$` calls such as running a program) doesn't count. Code that keeps the CPU busy is stopped sooner: at about 6 seconds its worker is ended and restarted (check 0.6). A hook that throws, returns the wrong shape or runs out of time is skipped, and by default the content goes through. A `.catch` handler gets **1 more second** to answer instead.
 
 | Setting `on_check_failure` | Behaviour |
 |---|---|
@@ -340,7 +345,7 @@ Each piece of text is checked once, when it first arrives, and saved already cle
 4. **Decode only what looks encoded,** in pieces, including very large blocks, and send the decoded text back through steps 1 to 3. At most 3 layers deep.
 5. **Skip repeated lines** already checked and found clean this session. This memory is cleared whenever a new secret is registered.
 
-- Hard ceiling: every hook must finish well inside Claude Code's 10-second budget, on a 2 MB input, on a modest laptop.
+- Hard ceiling: every hook must finish well inside Claude Code's 10-second budget, on a 2 MB input, on a modest laptop. CPU-bound work is cut off at about 6 seconds (check 0.6), so that is the real ceiling for checking work.
 - Speed targets are set from the first measurements (`plan.md`, Step 2) and published in the repo.
 
 ## 19. Install and distribution
@@ -361,7 +366,7 @@ Each piece of text is checked once, when it first arrives, and saved already cle
 - Release archives with SHA-256 checksums.
 - A changelog that calls out any change to defaults.
 
-**Uninstall** is documented, including how to delete the encrypted secrets file and the key from the password store.
+**Uninstall** is documented, including how to delete the saved secrets from the OS password store.
 
 ## 20. Verify it yourself
 
@@ -372,7 +377,7 @@ The maintainers can't test inside every organization. So everything needed to te
 | **`/redact self-check`** | Built-in cases run in seconds and show pass or fail. `--report` saves a shareable result. |
 | **`/redact doctor`** | Environment check (section 15). |
 | **Leak test kit** (`tools/leak-test/`) | A small local server that pretends to be the model API. It plays a scripted conversation that makes Claude Code read files, run commands, use `@` files, compact, and run subagents, all containing planted fake secrets. Claude Code is pointed at it with `ANTHROPIC_BASE_URL`. The server records every request Claude Code sends, then searches the recording for the fakes. Any hit is a failure. It uses Node built-ins only. |
-| **Tested-versions list** | Published per release: the pinned Claude Code version, leak test run in CI on macOS, Windows and Linux, plus a one-off manual check of the VS Code panel and the desktop Code tab. |
+| **Tested-versions list** | Published per release: the pinned Claude Code version, the VS Code extension's own Claude Code version, leak test run in CI on macOS, Windows and Linux, plus a one-off manual check of the VS Code panel and the desktop Code tab. |
 | **Published scores** | Catch rate and false-alarm rate on the public test sets, per release. |
 
 **Suggested trial for an organization**
@@ -398,13 +403,13 @@ The maintainers can't test inside every organization. So everything needed to te
 
 - **Shapeless secrets.** A secret with no known shape, no label, never registered and never seen before can't be detected by any tool. Registering secrets and "once caught, always caught" shrink this gap.
 - **Already sent.** Content sent before the tool was installed, or before a secret was registered, can't be taken back (sections 6.1, 6.2).
-- **Claude Code's own disk records.** Claude Code keeps backup copies of edited files in `~/.claude/file-history/`. It also stores a tool's structured result (what the screen shows) unchanged next to the redacted text. The tool can't change these. We'll report them to Anthropic.
+- **Claude Code's own disk records.** Claude Code keeps backup copies of edited files in `~/.claude/file-history/`. It also stores a tool's structured result (what the screen shows) unchanged next to the redacted text. Its auto-memory can save text from a prompt into project memory files. A prompt blocked by a hook is still written to the session transcript. The tool can't change these. We'll report them to Anthropic.
 - **Images and documents** are passed or dropped, never read, in v1.
 - **Personal mode:**
   - plugins in a higher tier can skip this tool
   - `allowManagedHooksOnly` turns it off
-  - `@` files depend on `prompt.mention` [Step 0]
-- **Safe mode** turns the main lock off. The backup lock still runs, but it can only block messages, not hide parts of them.
+  - a project's `disableAllHooks` setting, `--bare` and `CLAUDE_CODE_SIMPLE=1` turn the tool off, silently
+- **Safe mode** turns the main lock off. In Personal mode it turns the backup lock off too. A backup lock installed through managed settings still runs, but it can only block messages, not hide parts of them.
 - **Failed or slow checks** let content through by default (section 12).
 - **Observe mode** hides nothing, by design.
 - **Determined attacks.** The tool stops accidental leaks. It doesn't stop a person who deliberately splits up or scrambles a secret.
