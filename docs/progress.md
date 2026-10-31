@@ -43,7 +43,7 @@ Where the build stands, and what the next session needs to know. Spec: `docs/spe
 
 | ID | Part | Spec § | Plan | Depends on | Done when | ✓ |
 |---|---|---|---|---|---|---|
-| 0.0 | Repo setup: `package.json` (dev deps pinned, lockfile), `tsconfig`, test runner, folders (`plugin/`, `src/checker/`, `tools/leak-test/`, `tests/`, `experiments/`), `.gitignore`, `LICENSE` (Apache-2.0) + `NOTICE`, CI skeleton, CLAUDE.md commands filled in | 21 | Ground rules | — | An empty test passes locally and in CI; typecheck passes; commands are in CLAUDE.md | ☐ |
+| 0.0 | Repo setup: `package.json` (dev deps pinned, lockfile), `tsconfig`, test runner, folders (`plugin/`, `src/checker/`, `tools/leak-test/`, `tests/`, `experiments/`), `.gitignore`, `LICENSE` (Apache-2.0) + `NOTICE`, CI skeleton, CLAUDE.md commands filled in | 21 | Ground rules | — | An empty test passes locally and in CI; typecheck passes; commands are in CLAUDE.md | ☐ local ✓, CI pending |
 | 0.A | Probe mod that logs each `session.append` row's door, type and size (never content); `findings-step0.md` ready | 5.1 | Step 0 | 0.0 | The probe loads, validates, and logs rows from a real session | ☐ |
 | 0.B | Checks 0.1, 0.5, 0.10: which rows pass `session.append`; can media be dropped; VS Code and desktop | 5.1, 6, 4 | Step 0 | 0.A | Rows recorded in findings with evidence | ☐ |
 | 0.C | Checks 0.2, 0.3: `@` redirect via `prompt.mention` in the user tier; what `/resume` sends and whether a plugin can see it first | 5.3, 6.1 | Step 0 | 0.A | Rows recorded in findings with evidence | ☐ |
@@ -131,3 +131,9 @@ Where the build stands, and what the next session needs to know. Spec: `docs/spe
 ### 2026-10-31: workflow setup
 - Spec and plan moved to `docs/`. Slash commands added in `.claude/skills/`. Logs created: `decision-log.md`, `lessons.md`, `findings-step0.md`.
 - No code yet. Next: `/next-part 0.0` on branch `step-0`.
+
+### 2026-10-31: part 0.0
+- Exists now on `step-0`: npm + `package-lock.json` (dev deps only: `typescript@7.0.2`, `@types/node@24.19.2`), `node:test` running `.ts` directly on Node 24 (`.nvmrc`), `tsc -p .` typecheck only (`erasableSyntaxOnly`: no enums or namespaces), `LICENSE`, `NOTICE`, `.gitattributes` (LF everywhere), 3-OS CI with SHA-pinned actions, guard tests in `tests/repo-setup.test.ts`, empty `plugin/ src/checker/ tools/leak-test/ experiments/`.
+- **Not ticked yet:** the owner creates the GitHub repo and pushes `step-0`; tick 0.0 when CI is green on all three OSes (D-011). Claude never pushes.
+- Gotcha: the root tsconfig excludes `plugin/` and `experiments/`. Mod code has no Node and is typechecked with the tsconfig Claude Code writes beside a loaded mod. Mods can import only files inside the plugin folder, so `src/checker/` must be copied or bundled into `plugin/` (part 3.1).
+- Relative imports in tests use the `.ts` extension (`allowImportingTsExtensions`), since Node runs the sources directly.

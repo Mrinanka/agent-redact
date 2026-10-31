@@ -65,8 +65,9 @@ Every question to the user, whether while planning, implementing, reviewing or w
 
 ## Commands
 
-- Tests: (filled in by part 0.0)
-- Typecheck: (filled in by part 0.0)
+- Tests: `npm test` (Node's built-in `node:test`, runs `tests/**/*.test.ts` directly; Node 24, see `.nvmrc`)
+- Typecheck: `npm run typecheck` (`tsc -p .`, no emit; covers `src/`, `tools/`, `tests/`, not `plugin/` or `experiments/`)
+- Install dev tools: `npm ci --ignore-scripts` (exact versions from `package-lock.json`)
 - Check the plugin: `claude plugin validate ./plugin`
 - Plugin tests: `claude plugin test ./plugin`
 - Leak test kit: (filled in by part 1.2)

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+*.log
+
+# Written by Claude Code beside a loaded mod
+.claude-plugin/types/
+
+# OS and editor files
+.DS_Store
+Thumbs.db

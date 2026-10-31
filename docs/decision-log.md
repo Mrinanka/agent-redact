@@ -35,6 +35,11 @@ Tiny clarifications go under **Minor** at the bottom.
 | D-007 | Build workflow: slash commands, one part per session, commit at wrap-up, docs in `docs/` | accepted | setup | — |
 | D-008 | Credit only code actually copied | accepted | setup | 21 |
 | D-009 | Every question comes with a researched, evidence-backed recommendation | accepted | setup | — |
+| D-010 | Test runner: `node:test` with native type stripping; `tsc` only typechecks | accepted | 0.0 | 21 |
+| D-011 | CI: 3-OS matrix, SHA-pinned actions, timeout + concurrency; tick 0.0 after a green push | accepted | 0.0 | 4 |
+| D-012 | Node 24 LTS for development and CI | accepted | 0.0 | 4 |
+| D-013 | LF line endings on every OS (`.gitattributes`) | accepted | 0.0 | 4, 7, 18 |
+| D-014 | Rejected review finding: test that `.nvmrc` matches `engines` | accepted | 0.0 | — |
 
 ## Entry template
 
@@ -152,8 +157,67 @@ Tiny clarifications go under **Minor** at the bottom.
 - Revisit when: A `/step-retro` shows the research overhead outweighs the benefit for small questions.
 - Links: `CLAUDE.md` ("Questions and recommendations"); every command in `.claude/skills/`.
 
+## D-010: Test runner: `node:test` with native type stripping; `tsc` only typechecks
+- Date / Part: 2026-10-31 / 0.0. Status: accepted
+- Context: Every later part needs a test runner and a typecheck. CLAUDE.md forbids runtime libraries and asks for few pinned dev deps.
+- Options considered: A) `node:test` with Node running `.ts` directly, plus `tsc --noEmit` / B) Vitest / C) `tsc` builds to `dist/`, then `node:test` runs that.
+- Decision: A. Dev deps are exactly `typescript@7.0.2` and `@types/node@24.19.2`, installed with npm. `erasableSyntaxOnly` and `allowImportingTsExtensions` are on.
+- Why: It needs the fewest third-party packages of any option (4 installed), which suits a security tool. There's no build step, and it's proven on this machine. (Drafted from the session's evidence; the owner confirmed it.)
+- Evidence: A scratch run on Node v24.22.1 (Windows), where `npm test` ran `node --test "tests/**/*.test.ts"` and passed. `tsc` 7.0.2 rejected an enum with TS1294 under `erasableSyntaxOnly`. npm registry: typescript 7.0.2 published 2026-07-08.
+- Trade-offs: No enums, namespaces or parameter properties. No watch UI or snapshots. Relative imports carry `.ts` extensions.
+- Revisit when: tests need features `node:test` lacks, or Node type stripping changes.
+- Links: CLAUDE.md "Rules"; plan "Ground rules"; `package.json`, `tsconfig.json`.
+
+## D-011: CI: 3-OS matrix, SHA-pinned actions, timeout + concurrency; tick 0.0 after a green push
+- Date / Part: 2026-10-31 / 0.0. Status: accepted
+- Context: 0.0's "done when" needs the test to pass in CI, but the repo has no remote and Claude never pushes. An independent review (finding 6) noted there was no job timeout and that PRs would run twice.
+- Options considered: Three-OS now, ticked after the owner's push / three-OS now, ticked at wrap-up / Ubuntu only until 1.8. For finding 6: a timeout and concurrency group / also a push branch filter / defer to 1.8.
+- Decision: Ubuntu, Windows and macOS on Node from `.nvmrc`, with `npm ci --ignore-scripts`. Actions pinned to commit SHAs: checkout v7.0.1 `3d3c42e5aac5ba805825da76410c181273ba90b1`, setup-node v7.1.0 `949feb2413d6458794dcd2491c4babbbce0c15c1`. `permissions: contents: read`; `persist-credentials: false`. The job times out after 15 minutes, and a concurrency group cancels older runs. Push still runs on all branches. 0.0 is ticked when the owner's push shows green.
+- Why: It keeps "done when" honest. Windows is the maintainer's OS, so catching its path bugs early matters, and spec §4 asks for CI on all three. The timeout limits the cost of a hang (the mock server arrives in 1.2). A branch filter could stop `step-*` branches getting CI before a PR exists. (Drafted from the session's evidence; the owner confirmed it.)
+- Evidence: `git ls-remote` on actions/checkout and actions/setup-node (lightweight tags, so commit SHAs). GitHub workflow syntax docs, `concurrency` and "Using multiple events" ("multiple workflow runs will be triggered"). The 360-minute default job timeout is from memory and unverified.
+- Trade-offs: The tick waits on the owner. Runs on three OSes cost more CI time.
+- Revisit when: part 1.8 extends the matrix, or CI minutes become a problem.
+- Links: spec §4; plan "Ground rules"; `.github/workflows/ci.yml`; `tests/repo-setup.test.ts`.
+
+## D-012: Node 24 LTS for development and CI
+- Date / Part: 2026-10-31 / 0.0. Status: accepted
+- Context: The test setup (D-010) relies on Node running `.ts` directly; dev and CI need one pinned Node.
+- Options considered: Node 24 only / Node 22 and 24 in CI.
+- Decision: `.nvmrc` is `24`, `engines.node` is `>=24`, and `engine-strict=true`. The minimum Node for *users* (the backup lock) is not decided here; that is check 0.13 / part 0.E.
+- Why: It matches the maintainer's machine, and native `.ts` tests were verified on it. Node 22 support wasn't tested. (Drafted from the session's evidence; the owner confirmed it.)
+- Evidence: `node -p process.release.lts` printed `Krypton`; the scratch run on v24.22.1.
+- Trade-offs: Contributors on Node 22 have to upgrade.
+- Revisit when: 0.E / 0.13 sets the user-side minimum, or Node 26 becomes LTS.
+- Links: `.nvmrc`, `package.json`, `.npmrc`; findings-step0 row 0.13.
+
+## D-013: LF line endings on every OS (`.gitattributes`)
+- Date / Part: 2026-10-31 / 0.0. Status: accepted
+- Context: Independent review finding 8.
+- Options considered: Add `.gitattributes` now / wait until hashed or golden files exist.
+- Decision: `* text=auto eol=lf`, binary types marked as binary, plus a guard test. CRLF input is tested on purpose with fixtures built in the test, never by accident of checkout.
+- Why: The checker's regexes, anchors, offsets and test-set sizes must not depend on where the repo was cloned. Adding it before any fixtures exist costs nothing. (Drafted from the session's evidence; the owner confirmed it.)
+- Evidence: Git for Windows system config sets `core.autocrlf=true` (`git config --system --show-origin`: `C:/Program Files/Git/etc/gitconfig`). `git check-attr` shows `eol: lf` applied to existing files.
+- Trade-offs: None significant; Windows editors must handle LF, which all modern ones do.
+- Revisit when: a file genuinely needs CRLF, which would get a per-file attribute.
+- Links: spec §4, §7, §18; `.gitattributes`; `tests/repo-setup.test.ts`.
+
+## D-014: Rejected review finding: test that `.nvmrc` matches `engines`
+- Date / Part: 2026-10-31 / 0.0. Status: accepted
+- Context: Independent review finding 4 proposed a drift-guard test between `.nvmrc` and `package.json` `engines`.
+- Options considered: Add the test / reject.
+- Decision: Rejected.
+- Why: `engine-strict=true` already makes any harmful mismatch fail `npm ci` in CI, which installs Node from `.nvmrc`. The only drift that would pass silently is bumping `.nvmrc` to a higher version, which is harmless. (Drafted from the session's evidence; the owner confirmed it.)
+- Evidence: `.npmrc` (`engine-strict=true`), `package.json` engines `>=24`, `.nvmrc` `24`, all checked this session.
+- Trade-offs: None.
+- Revisit when: CI stops installing Node from `.nvmrc`, or `engine-strict` is removed.
+- Links: `.npmrc`, `.nvmrc`, `package.json`.
+
 ---
 
 ## Minor
 
 - 2026-10-31: "secret-shield" is a working name. The final name is chosen in part 6.4 (no "Claude" or "Anthropic" in it).
+- 2026-10-31 / 0.0: NOTICE copyright line is "Copyright 2026 Mrinanka Dhar", with the project as "secret-shield (working name)" (renamed in 6.4).
+- 2026-10-31 / 0.0: npm, not pnpm. pnpm isn't installed and npm ships with Node.
+- 2026-10-31 / 0.0: `noUncheckedIndexedAccess` is on in `tsconfig.json`. Stricter than planned; no new dependency.
+- 2026-10-31 / 0.0: `step-0` was branched from `develop` (commit f135454), the only local branch.

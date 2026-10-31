@@ -1,0 +1,13 @@
+# Same bytes on every OS. Git for Windows defaults to core.autocrlf=true, which would
+# check text out as CRLF on Windows and LF elsewhere; the checker's regexes, offsets and
+# test-set sizes must not depend on where the repo was cloned. CRLF input is tested on
+# purpose, with fixtures built in the test, never by accident of checkout.
+* text=auto eol=lf
+
+# Binary: never touched.
+*.png  binary
+*.jpg  binary
+*.gif  binary
+*.pdf  binary
+*.zip  binary
+*.gz   binary

@@ -1,0 +1,20 @@
+{
+  // Typecheck only: Node runs the .ts files directly (type stripping), so nothing is emitted.
+  // plugin/ and experiments/ hold mod code, which runs without Node and is typechecked
+  // against the tsconfig that Claude Code writes beside a loaded mod.
+  "compilerOptions": {
+    "target": "es2023",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "forceConsistentCasingInFileNames": true,
+    "types": ["node"]
+  },
+  "include": ["src", "tools", "tests"],
+  "exclude": ["node_modules", "plugin", "experiments"]
+}
