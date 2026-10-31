@@ -33,6 +33,8 @@ export type FakeResult = {
   leaked: boolean
   forms: string[]
   parts: Part[]
+  /** The API paths it went to: /v1/messages, or something unexpected such as a telemetry path. */
+  paths: string[]
   requests: number
 }
 
@@ -103,11 +105,13 @@ const ENV_KEEP = new Set([
   'LANG', 'LC_ALL', 'SHELL', 'TERM', 'CLAUDE_CODE_GIT_BASH_PATH',
 ])
 
+const inheritedEnv = (): NodeJS.ProcessEnv =>
+  Object.fromEntries(Object.entries(process.env).filter(([k]) => ENV_KEEP.has(k.toUpperCase())))
+
 function runEnv(mock: { host: string; port: number }, trap: { host: string; port: number }, configDir: string, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
-  const kept = Object.entries(process.env).filter(([k]) => ENV_KEEP.has(k.toUpperCase()))
   const proxy = `http://${trap.host}:${trap.port}`
   return {
-    ...Object.fromEntries(kept),
+    ...inheritedEnv(),
     ANTHROPIC_BASE_URL: `http://${mock.host}:${mock.port}`,
     ANTHROPIC_API_KEY: 'mock-not-a-key',
     CLAUDE_CONFIG_DIR: configDir,
@@ -124,7 +128,7 @@ function runEnv(mock: { host: string; port: number }, trap: { host: string; port
 function checkVersion(claude: ClaudeCommand, opts: KitOptions): string {
   const hint = 'pass the real binary with --claude <path>'
   if (/\.(cmd|bat)$/i.test(claude.cmd)) throw new KitError(`${claude.cmd} is a shell shim, which can't be started directly: ${hint}`)
-  const r = spawnSync(claude.cmd, [...(claude.args ?? []), '--version'], { encoding: 'utf8', timeout: 30_000 })
+  const r = spawnSync(claude.cmd, [...(claude.args ?? []), '--version'], { encoding: 'utf8', timeout: 30_000, env: inheritedEnv() })
   if (r.error) throw new KitError(`could not start ${path.basename(claude.cmd)}: install Claude Code, or ${hint}`)
   const version = /^(\d+\.\d+\.\d+)/.exec(r.stdout ?? '')?.[1]
   if (r.status !== 0 || !version) throw new KitError(`could not read the Claude Code version from ${path.basename(claude.cmd)}`)
@@ -160,7 +164,7 @@ function runClaude(claude: ClaudeCommand, args: string[], cwd: string, env: Node
   })
 }
 
-type DoorState = { name: string; witness: string; witnessId: string; witnessSeen: boolean; fakes: { id: string; fake: Fake; form: PlantForm; hits: { part: Part; form: string; request: string }[] }[] }
+type DoorState = { name: string; witness: string; witnessId: string; witnessSeen: boolean; fakes: { id: string; fake: Fake; form: PlantForm; hits: { part: Part; form: string; path: string; request: string }[] }[] }
 
 function plantDoors(scenario: Scenario): DoorState[] {
   const src = randomSource()
@@ -195,7 +199,7 @@ function collectHits(record: RequestRecord, runIndex: number, doors: DoorState[]
     for (const d of doors) {
       if (hit.fakeId === d.witnessId) d.witnessSeen = true
       for (const f of d.fakes) {
-        if (hit.fakeId === f.id) f.hits.push({ part: hit.part, form: hit.form, request: `${runIndex}:${record.i}` })
+        if (hit.fakeId === f.id) f.hits.push({ part: hit.part, form: hit.form, path: record.path, request: `${runIndex}:${record.i}` })
       }
     }
   }
@@ -312,6 +316,7 @@ function doorResult(scenario: string, d: DoorState, verdict: Verdict): DoorResul
       leaked: f.hits.length > 0,
       forms: unique(f.hits.map(h => h.form)).sort(),
       parts: unique(f.hits.map(h => h.part)).sort(),
+      paths: unique(f.hits.map(h => h.path)).sort(),
       requests: unique(f.hits.map(h => h.request)).length,
     })),
   }

@@ -49,6 +49,10 @@ Tiny clarifications go under **Minor** at the bottom.
 | D-021 | Add check 0.14: hook kill switches (`disableAllHooks`, `--bare`, `CLAUDE_CODE_SIMPLE`) | accepted | step 0 | 3, 17, 22 |
 | D-022 | Apply the step 0 findings to the spec | accepted | step 0 | 4, 5, 6.1, 12, 18, 20, 22 |
 | D-023 | Registered secrets are locked by the OS password store, not by our own AES | accepted | step 0 | 8.1, R-10 |
+| D-024 | Leak kit searches requests as they arrive and keeps labels only; each door has a witness | accepted | step 1 | 20 |
+| D-025 | Claude Code for the kit is pinned in its own lockfile folder | accepted | step 1 | 4, 20 |
+| D-026 | Network proof: proxy trap on every run, plus one Linux run with no network | accepted | step 1 | 17, 20 |
+| D-027 | The optional real-API run moves from step 1 to step 6 | accepted | step 1 | 20 |
 
 ## Entry template (short form, from D-018 on)
 
@@ -315,6 +319,34 @@ Tiny clarifications go under **Minor** at the bottom.
 - Evidence: findings 0.4 (`claude-code.d.ts:16030`; test kit own keys `["digest"]`; live `subtle:false`; DPAPI round trip `roundtrip-ok`, ~0.8 s); 0.6 (waiting on `$.process` doesn't count toward the hook's time). Unverified: size limits of Keychain and Secret Service items, and the macOS/Linux commands (step 1).
 - With no password store, the tool runs without saved secrets instead of using a key file. The owner confirmed: "no one is running claude in a server or something with no password store".
 
+## D-024: Leak kit searches requests as they arrive and keeps labels only; each door has a witness
+- Date / Step: 2026-10-31 / 1        Status: accepted
+- Decision: The mock searches each request on arrival, in every form (plain, escaped, base64 at 3 alignments, base64url, URL-encoded, hex), then drops the body. Only labels reach the records and the report, which is checked for fakes before it leaves the kit. Each door plants a harmless witness: no witness, a failed run, an unreadable body or a network attempt makes the run invalid, never clean. `--expect leaks` is the baseline and fails if any fake goes unseen.
+- Why: A recording would be a file full of secrets, which the tool exists to prevent, and a leak test must not pass because nothing ran. The owner approved this in the step 1 plan. (Drafted from the session's evidence.)
+- Rejected: Keeping the raw recording, as spec §20's wording suggests (it writes fakes to disk). Reusing the Step 0 mock as it was (`server.ts:200-220` returns before recording unknown paths, `count_tokens` and oversized bodies, and it can't read compressed bodies).
+- Evidence: `tools/leak-test/`; 19 of 19 deliberate breaks of these safeguards caught by `tests/leak-*.test.ts`, with a passing control; docs: env-vars (large bodies are gzipped on direct connections). Trade-off: an old run can't be searched again.
+
+## D-025: Claude Code for the kit is pinned in its own lockfile folder
+- Date / Step: 2026-10-31 / 1        Status: accepted
+- Decision: `tools/leak-test/claude-pin/` holds `@anthropic-ai/claude-code@2.1.316` with its own lockfile, installed with `npm ci --ignore-scripts`. The kit runs the platform binary directly and looks for: an explicit path, then the pinned install, then PATH.
+- Why: The version is hash-checked and a normal install stays small. The owner chose this option.
+- Rejected: A root devDependency (every `npm ci` pulls about 320 MB, and it still needs the direct binary path). The native installer (runs a script fetched live, not pinned by our lockfile).
+- Evidence: Scratch install: 14 s, 321 MB, `bin/claude` a 500-byte stub, the platform binary printed 2.1.316; the lockfile has sha512 hashes for all 8 platforms. Docs: setup. npm dist-tags: `latest` 2.1.316, `stable` 2.1.309; 2.1.316 is what the findings used.
+
+## D-026: Network proof: proxy trap on every run, plus one Linux run with no network
+- Date / Step: 2026-10-31 / 1        Status: accepted
+- Decision: Every run goes through a recording proxy that refuses and logs outbound attempts; any attempt makes the run invalid. CI also runs the baseline on Linux in a loopback-only namespace, after proving an outside connection fails there.
+- Why: The trap only sees traffic that honours proxy settings; on Linux the namespace covers the rest. The owner chose this option.
+- Rejected: The trap alone (weaker: it can't see a client that ignores proxy settings).
+- Evidence: The trap caught `CONNECT api.anthropic.com:443` without `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` and nothing with it; CI run 41217109599: 0 attempts on 3 OSes, 98 of 98 in the namespace. Windows and macOS have no equivalent run (progress, Known issues).
+
+## D-027: The optional real-API run moves from step 1 to step 6
+- Date / Step: 2026-10-31 / 1        Status: accepted
+- Decision: Plan 1a item 6 moves to plan step 6, and stays out of the kit.
+- Why: There's nothing to protect until the tool exists, and the kit promises no key and no network. The owner chose this option.
+- Rejected: Building a `--real` mode in step 1 (work on a mode with no tool to test; needs a real key and costs money to prove).
+- Evidence: Spec §20 ("none of it needs an API key or network access"); plan 1a; scripted replies don't apply to a real model.
+
 ---
 
 ## Minor
@@ -331,3 +363,6 @@ Tiny clarifications go under **Minor** at the bottom.
 - 2026-10-31 / 0: Probe bumped to 0.2.0 (opt-in checks added). The owner approved changing the one test that expected `0.1.0`. Also approved earlier: the 0.4 test expects no AES (`subtle:false`), and the 0.3 hold test no longer reads `.result` (test-kit bug).
 - 2026-10-31 / 0: Spec §7.2 no longer writes AWS's example key whole (CLAUDE.md docs rule; the secret scanner flagged it). The owner approved.
 - 2026-10-31 / 0: The probe and the step 0 mock stay in `experiments/` for re-checks when Claude Code updates (D-016 revisit; the owner didn't object).
+- 2026-10-31 / 1: Plan 1a gained two doors, project `CLAUDE.md` and settings-hook context, and one item, the network proof (approved in the step 1 plan).
+- 2026-10-31 / 1: The owner approved a wip commit and push of `step-1` before `/verify`, so the 3-OS CI could finish checks 0.4 and 0.13. A follow-up wip commit fixed a guard test pattern.
+- 2026-10-31 / 1: The kit's fakes are random each run; the test sets use a fixed seed, so scores compare between releases.

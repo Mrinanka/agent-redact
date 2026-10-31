@@ -216,6 +216,32 @@ test('ambient ANTHROPIC_* and CLAUDE_* never reach claude, except what the kit s
   }
 })
 
+test('the version check gets the same clean environment as a run', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-version-env-'))
+  const seen = path.join(dir, 'names.json')
+  const shim = path.join(dir, 'shim.mjs')
+  fs.writeFileSync(shim, `import fs from 'node:fs'
+if (process.argv.includes('--version')) {
+  fs.writeFileSync(${JSON.stringify(seen)}, JSON.stringify(Object.keys(process.env)))
+  console.log('2.1.316 (Claude Code)')
+}
+`)
+  process.env.ANTHROPIC_AUTH_TOKEN_PROBE = 'ambient-value'
+  try {
+    await runKit({ claude: { cmd: process.execPath, args: [shim] }, plugin: null, expect: 'clean', scenarios: [], timeoutMs: 20_000 })
+    const names = JSON.parse(fs.readFileSync(seen, 'utf8')) as string[]
+    assert.ok(!names.includes('ANTHROPIC_AUTH_TOKEN_PROBE'))
+  } finally {
+    delete process.env.ANTHROPIC_AUTH_TOKEN_PROBE
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a leak names the path it went to', async () => {
+  const r = await runKit(base('send-all', 'leaks'))
+  assert.deepEqual(r.doors[0]?.fakes[0]?.paths, ['/v1/messages'])
+})
+
 test('scratch folders are removed, and kept only when asked', async () => {
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-scratch-'))
   try {

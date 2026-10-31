@@ -99,11 +99,12 @@ This tests checks 0.2, 0.7 and the Managed-mode rows of spec 5.3 the way an orga
    - subagents
    - long chats that get compacted
    - `/resume` of a session recorded without the tool
-4. **Search the recording for any fake.** Any hit is a failure.
-5. **Search the disk too.** Search `~/.claude` and record what Claude Code keeps on disk. This is reported, not failed, since some of it is outside our control.
-6. **Optional real run.** The same scenarios against the real API, run by the maintainer before each release.
+   - project `CLAUDE.md` and settings-hook context
+4. **Search every request for any fake,** as it arrives, in every form (plain, escaped, base64, URL-encoded, hex). Any hit is a failure. Each door also plants a harmless witness: no witness means the door wasn't used, and the run is invalid, never clean. Bodies are never kept or written to disk.
+5. **Search the disk too.** Search the run's own config folder and report what Claude Code keeps on disk. This is reported, not failed, since some of it is outside our control. Your real `~/.claude` is never touched.
+6. **No other network traffic.** A recording proxy refuses and logs every outbound attempt; any attempt makes the run invalid. CI also runs the kit once on Linux with no network at all.
 
-CI runs it with `claude -p` on the pinned Claude Code version on macOS, Windows and Linux. The interactive terminal, VS Code and the desktop app are checked by hand once before release.
+CI runs it with `claude -p` on the pinned Claude Code version on macOS, Windows and Linux. The interactive terminal (including a real paste), VS Code and the desktop app are checked by hand once before release.
 
 The kit lives in `tools/leak-test/` and is part of the release, so adopters can run it (spec 20).
 
@@ -202,8 +203,9 @@ Then **Audit 1**.
    - `README` (what it does, 2-minute install, limits)
    - `docs/personal.md`, `docs/managed.md`, `docs/verify.md` (running the leak test kit), `docs/troubleshooting.md`
 4. **Results:** tested-versions list and scores for this release.
-5. **Release:** tag, archive, SHA-256 checksums, changelog.
-6. **Final name** chosen and checked (spec header).
+5. **Optional real run.** The same doors against the real API, run by the maintainer before each release. Moved here from step 1: it needs a real key and network, and there is nothing to test until the tool exists. It stays out of the kit, which uses neither (spec 20).
+6. **Release:** tag, archive, SHA-256 checksums, changelog.
+7. **Final name** chosen and checked (spec header).
 
 Before release, the maintainer uses it for their own daily work for at least two weeks.
 
