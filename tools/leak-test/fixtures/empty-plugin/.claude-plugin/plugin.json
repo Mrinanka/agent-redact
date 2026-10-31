@@ -1,0 +1,7 @@
+{
+  "name": "leak-test-empty-plugin",
+  "version": "0.0.0",
+  "description": "The empty tool: a plugin with no hooks. The leak test baseline runs against it, and every planted fake must be reported leaked.",
+  "author": { "name": "Mrinanka Dhar" },
+  "license": "Apache-2.0"
+}

@@ -32,3 +32,48 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run typecheck
       - run: npm test
+
+  # Step 1 "Done when": against the empty tool, every planted fake is reported leaked.
+  leak-test:
+    name: leak test (${{ matrix.os }})
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Install the pinned Claude Code
+        run: npm ci --ignore-scripts --prefix tools/leak-test/claude-pin
+      - name: Leak test baseline
+        run: npm run leak-test:baseline -- --require-pinned
+      - name: Put the pinned Claude Code on PATH
+        shell: bash
+        run: node tools/leak-test/claude-path.ts >> "$GITHUB_PATH"
+      # Checks 0.4 and 0.13, finished here (D-020). The output holds labels and sizes only.
+      - name: Password store and Node checks
+        run: node experiments/step0-mock/run.ts runtime store
+      - name: Linux password store, with and without a keyring
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libsecret-tools gnome-keyring
+          node experiments/step0-mock/run.ts store
+          dbus-run-session -- sh -c 'printf ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null; node experiments/step0-mock/run.ts store'
+      # The proxy trap only sees traffic that honours proxy settings. Here nothing can
+      # leave: the namespace has only loopback, and the first line proves it.
+      - name: Linux baseline with no network
+        if: runner.os == 'Linux'
+        run: |
+          sudo env "PATH=$PATH" "HOME=$HOME" "RUN_AS=$(id -un)" unshare --net -- sh -c '
+            ip link set lo up &&
+            node -e "require(\"node:net\").connect(443, \"1.1.1.1\").on(\"connect\", () => process.exit(1)).on(\"error\", () => process.exit(0))" &&
+            exec sudo -u "$RUN_AS" env "PATH=$PATH" "HOME=$HOME" npm run leak-test:baseline -- --require-pinned'

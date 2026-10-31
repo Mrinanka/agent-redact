@@ -2,14 +2,14 @@
 
 Spec: `docs/spec.md`. Plan: `docs/plan.md`. Parked work: spec §23.
 
-**Current focus:** Step 1, Test kit (branch `step-1` from `develop`). Start with `/plan-step`.
+**Current focus:** Step 2, Checker (branch `step-2` from `develop`). Start with `/plan-step`.
 
 ## Steps
 
 | Step | What | Branch | ✓ |
 |---|---|---|---|
 | 0 | Facts | `step-0` | ☑ |
-| 1 | Test kit | `step-1` | ☐ |
+| 1 | Test kit | `step-1` | ☑ |
 | 2 | Checker | `step-2` | ☐ |
 | 3 | Core hiding + Audit 1 | `step-3` | ☐ |
 | 4 | Rest of the main lock | `step-4` | ☐ |
@@ -23,14 +23,21 @@ Spec: `docs/spec.md`. Plan: `docs/plan.md`. Parked work: spec §23.
 Bugs, unfinished bits and open questions. Features we chose not to build go in spec §23.
 
 - D-005: the owner's reason for `on_check_failure: allow` was never recorded.
-- Probe tests (`claude plugin test`) don't run in CI, because CI has no `claude`.
+- Probe tests (`claude plugin test`) don't run in CI. The pinned `claude` now makes that possible; it wasn't added in step 1.
 - `claude plugin test` (2.1.316): a `turn.step` stream's `.result` resolves `undefined` even when the step beneath answers, contrary to its doc (`HookStream.result`, `claude-code.d.ts:5383`). Probe tests check the hold through its effects instead. Report it upstream.
 - Self-protection (§17) should probably also cover Claude Code's own settings files: a prompt injection could make Claude write `disableAllHooks` into `.claude/settings.local.json` (check 0.14). Decide in step 4.
 - The desktop app's probe log had no `start` line, so its Claude Code version wasn't recorded. Check before release.
-- Not yet proven that `claude -p` makes no network call besides the mock (`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` was set but not checked). Prove it in step 1.
+- The kit's no-network proof is strongest on Linux, where nothing can leave (loopback-only namespace). On Windows and macOS the proxy trap only sees traffic that honours proxy settings.
+- The macOS Keychain call at 1 MB was refused before it ran, and the check doesn't record why. Log the cause when the store limit is measured.
 - The probe's `turn.step` hold has no `.catch`, so it fails open. Fine for a test tool; the product's refusing hooks must have one (R-03).
 - Check 0.6: a `.catch` that spun the CPU for 2 s still had its answer used, although the documented grace is 1 s. Don't rely on the grace either way.
-- Checks 0.4 (macOS `security`, Linux `secret-tool`) and 0.13 can only be run on Windows from the maintainer's machine. They close as "partly (Windows)" in step 0 and are finished in step 1, when `claude` is installed in the 3-OS CI for the leak test kit (D-020).
+- **Decide before step 3:** spec §8.1 and D-023 assume one OS store item holds the whole list of secrets. Check 0.4 shows that fails on macOS and Linux: only about 1 KB is proven safe (exact limit unknown, between 1 KB and 64 KB), and macOS only goes higher by putting secrets on a command line. 10,000 secrets won't fit. §8.1 is unchanged until the owner decides.
+- The kit's `clean` mode has only run against the stand-in, because no hiding tool exists yet. Step 3 is its first real run.
+- Plan step 6 now holds the optional real-API run (moved from step 1, D-027).
+- Step 2 must list `tools/test-sets/whole-keys.ts` and the key shapes in `tests/fakes.test.ts` in `THIRD_PARTY_LICENSES` when it creates that file (decision log, Minor).
+- Spec §22 doesn't list the `.txt` files in `projects/`, which hold what looks like a saved copy of large command output. Step 3 measures whether it stays raw with the tool on.
+- CI's password store and Node steps print evidence but can't fail the job. A change in them only shows if someone reads the log.
+- Killing the kit mid-run, or using `--keep`, leaves a scratch folder holding that run's fakes.
 
 ## Gotchas
 
@@ -53,6 +60,13 @@ Platform and tooling facts learned so far (from the old `lessons.md`).
 - The VS Code extension runs its own Claude Code version (2.1.314 next to CLI 2.1.316).
 - When Claude Code loads a mod (VS Code, desktop app, an interactive session), it writes `tsconfig.json` and `.claude-plugin/types/` into the mod folder. Delete them after a test run; the types folder is gitignored, the `tsconfig.json` is not.
 - When a skill asks for plan approval, the answers to design questions are not approval. Ask for approval explicitly.
+- `npm i --ignore-scripts @anthropic-ai/claude-code` leaves `bin/claude` as a stub. The real binary is in the platform package, for example `claude-code-win32-x64/claude.exe`, and runs directly.
+- Connected (MCP) tools are deferred: they aren't in the request's tool list, but a scripted call by name works.
+- Project `CLAUDE.md` text reaches the model in `messages`, not `system`. `messages` can also hold `system`-role entries.
+- Without `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, `claude -p` tries `api.anthropic.com:443` even with `ANTHROPIC_BASE_URL` set. Marketplace auto-install has its own switch (docs: env-vars).
+- OS password store limits (check 0.4): `secret-tool` and `security -i` take about 1 KB safely, not 64 KB. DPAPI took 1 MB.
+- A mutation check means nothing unless the unmutated tests pass first. Run it with a control, on its own, and with its own temp folder: a mutant that keeps scratch folders fills the real one.
+- In a shell chain, a `sed` that matches nothing still succeeds. Check a test run's result, not the commands before it, before committing.
 
 ## Session notes
 
@@ -76,3 +90,9 @@ Newest last, 3–5 lines each: what exists now and what the next session needs.
 - Mods: `$` may only be passed to functions declared or imported at the top of a file, and each event may be registered once without a matcher. Type-check mods with the tsconfig from the types file header; `claude plugin validate` doesn't catch type errors.
 - Owner ran the interactive terminal, VS Code, desktop app and managed-mode checks by hand; all test leftovers outside the repo were deleted afterwards.
 - Next session needs: step 1 (test kit). Reuse `experiments/step0-mock/server.ts` as the start of `tools/leak-test/`; install `claude` in CI to finish 0.4 and 0.13 on macOS and Linux.
+
+### 2026-10-31: step 1 (test kit)
+- `tools/leak-test/`: mock (`server.ts`), search (`detect.ts`), proxy trap (`trap.ts`), 14 doors (`scenarios.ts`), core (`kit.ts`), CLI (`run.ts`), with Claude Code pinned in `claude-pin/` (D-024 to D-026). `tools/test-sets/`: fakes, catch, code, false-alarm and speed sets, for step 2 to measure against.
+- Baseline: 98 of 98 fakes seen on Windows, macOS and Linux, and on Linux with no network; 0 network attempts (CI run 41217109599; two kit fixes after it are covered by the PR's CI). 152 tests in `npm test`, 30 under `claude plugin test`.
+- Checks 0.4, 0.11 and 0.13 finished. The store limit in 0.4 means spec §8.1 needs a decision before step 3 (Known issues).
+- Next session needs: step 2 (checker). Pin Gitleaks (v8.30.1 was read, `83d9cd68`, 222 rules), create `THIRD_PARTY_LICENSES`, and measure against `catchSet()`, `codeSet()`, `falseAlarmFiles()` and `speedSet()`.

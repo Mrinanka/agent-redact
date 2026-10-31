@@ -51,4 +51,5 @@ Spec: @docs/spec.md. Plan: @docs/plan.md. Progress: docs/progress.md.
 - Check the plugin: `claude plugin validate ./plugin`
 - Plugin tests: `claude plugin test ./plugin`
 - Step 0 probe: `claude plugin test ./experiments/step0-probe`; run it with `claude --plugin-dir "<repo>/experiments/step0-probe"` from a scratch folder (log: `<cwd>/.step0-probe/`)
-- Leak test kit: (filled in by step 1)
+- Install the pinned Claude Code for the kit: `npm ci --ignore-scripts --prefix tools/leak-test/claude-pin` (about 320 MB, its own lockfile)
+- Leak test kit: `npm run leak-test:baseline` (empty tool: every fake must be seen; add `-- --require-pinned` to refuse another version) and `npm run leak-test` (the tool in `plugin/`: no fake may be seen). `-- --only <scenario>` runs one. Exit codes: 0 pass, 1 leak or blind, 2 invalid run

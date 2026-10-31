@@ -15,6 +15,7 @@ Each check is **off** unless its marker file `<cwd>/.step0-probe/on-<name>` exis
 | `on-resume-hold` | 0.3 | With `on-resume`: holds the first main request (answers `turn.step` without sending it) |
 | `on-runtime` | 0.4, 0.13 | Logs whether AES-GCM and secure random exist, a DPAPI round trip through PowerShell, whether `security` / `secret-tool` / `node` run |
 | `on-media` | 0.5 | Replaces image and document blocks with a text note |
+| `on-store` | 0.4 | Round trip through DPAPI, macOS Keychain and Linux Secret Service at 1 KB, 64 KB and 1 MB, cleaned up after. Logs labels and sizes only |
 | `on-budget` | 0.6 | Misbehaves on purpose when a row holds `BUDGET-THROW`, `-CPU`, `-AWAIT`, `-SLEEP` or `-CATCHSLOW` |
 | `on-hide` | 0.10 | Replaces canaries with `[HIDDEN]` in every row before it is stored |
 

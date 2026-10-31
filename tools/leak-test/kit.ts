@@ -1,0 +1,378 @@
+// The leak test kit's core (spec §20, plan 1a). Plants fakes through every door,
+// runs Claude Code against the local mock, and reports what reached it.
+//
+//   expect 'clean'  any fake seen is a failure ('leak')
+//   expect 'leaks'  any fake NOT seen is a failure ('blind'): the baseline, which
+//                   proves the kit can see, run against the empty tool
+//
+// A door proves nothing unless it was used, so each has a witness; with no witness
+// in a request, or a run that failed, the door is 'invalid', never clean.
+// The report holds labels only, and is checked for fakes before it leaves here.
+
+import { spawn, spawnSync } from 'node:child_process'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { holdsFake, needlesFor, scrub, witnessNeedle, type Needle, type Part } from './detect.ts'
+import { searchDisk, summarizeDisk, type DiskHit } from './disk.ts'
+import { startLeakMock, type RequestRecord } from './server.ts'
+import { startTrap, type Attempt } from './trap.ts'
+import { ALLOWED_TOOLS, SCENARIOS, type Ctx, type Run, type Scenario } from './scenarios.ts'
+import type { ClaudeCommand } from './claude-bin.ts'
+import { makeFake, makeWitness, plant, randomSource, type Fake, type FakeKind, type PlantForm } from '../test-sets/fakes.ts'
+
+export class KitError extends Error {}
+
+export type Verdict = 'pass' | 'leak' | 'blind' | 'invalid'
+
+export type FakeResult = {
+  id: string
+  kind: FakeKind
+  plantedAs: PlantForm
+  leaked: boolean
+  forms: string[]
+  parts: Part[]
+  /** The API paths it went to: /v1/messages, or something unexpected such as a telemetry path. */
+  paths: string[]
+  requests: number
+}
+
+export type DoorResult = { scenario: string; door: string; witnessSeen: boolean; verdict: Verdict; fakes: FakeResult[] }
+
+export type RunResult = {
+  scenario: string
+  run: number
+  exit: number | null
+  timedOut: boolean
+  seconds: number
+  requests: number
+  /** Only for a run that failed, with every fake scrubbed. */
+  stderr?: string[]
+}
+
+export type Report = {
+  kit: 1
+  expect: 'clean' | 'leaks'
+  os: string
+  claudeVersion: string
+  pinnedVersion?: string
+  plugin: string
+  verdict: Verdict
+  doors: DoorResult[]
+  runs: RunResult[]
+  network: { attempts: Attempt[] }
+  /** Requests whose body could not be searched. */
+  unreadable: number
+  disk: DiskHit[]
+  /** Scratch folders that could not be removed. */
+  leftovers: number
+}
+
+export type KitOptions = {
+  claude: ClaudeCommand
+  /** A plugin folder, or null to load none (for a tool installed by managed settings). */
+  plugin: string | null
+  expect: 'clean' | 'leaks'
+  scenarios?: Scenario[]
+  /** Scratch parent folder. Default: the OS temp folder. */
+  scratch?: string
+  keep?: boolean
+  timeoutMs?: number
+  pinned?: string
+  requirePinned?: boolean
+  extraEnv?: Record<string, string>
+}
+
+const RUN_TIMEOUT_MS = 180_000
+const KILL_GRACE_MS = 3_000
+
+// Each door gets one fake per line, so a line-based tool or test can treat them apart.
+const PLANTS: [FakeKind, PlantForm][] = [
+  ['github-pat', 'plain'],
+  ['aws-access-key', 'plain'],
+  ['labelled-password', 'plain'],
+  ['connection-string', 'plain'],
+  ['stripe', 'base64'],
+  ['gitlab-pat', 'url'],
+  ['private-key', 'json-escaped'],
+]
+
+// Inherited only if listed: a real token in the environment must never reach a run.
+const ENV_KEEP = new Set([
+  'PATH', 'PATHEXT', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'TEMP', 'TMP', 'TMPDIR', 'HOME', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH',
+  'APPDATA', 'LOCALAPPDATA', 'PROGRAMDATA', 'PROGRAMFILES', 'PROGRAMFILES(X86)', 'PROGRAMW6432', 'USER', 'USERNAME', 'LOGNAME',
+  'LANG', 'LC_ALL', 'SHELL', 'TERM', 'CLAUDE_CODE_GIT_BASH_PATH',
+])
+
+const inheritedEnv = (): NodeJS.ProcessEnv =>
+  Object.fromEntries(Object.entries(process.env).filter(([k]) => ENV_KEEP.has(k.toUpperCase())))
+
+function runEnv(mock: { host: string; port: number }, trap: { host: string; port: number }, configDir: string, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
+  const proxy = `http://${trap.host}:${trap.port}`
+  return {
+    ...inheritedEnv(),
+    ANTHROPIC_BASE_URL: `http://${mock.host}:${mock.port}`,
+    ANTHROPIC_API_KEY: 'mock-not-a-key',
+    CLAUDE_CONFIG_DIR: configDir,
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+    CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL: '1',
+    DISABLE_AUTOUPDATER: '1',
+    HTTPS_PROXY: proxy,
+    HTTP_PROXY: proxy,
+    NO_PROXY: `${mock.host},localhost`,
+    ...extra,
+  }
+}
+
+function checkVersion(claude: ClaudeCommand, opts: KitOptions): string {
+  const hint = 'pass the real binary with --claude <path>'
+  if (/\.(cmd|bat)$/i.test(claude.cmd)) throw new KitError(`${claude.cmd} is a shell shim, which can't be started directly: ${hint}`)
+  const r = spawnSync(claude.cmd, [...(claude.args ?? []), '--version'], { encoding: 'utf8', timeout: 30_000, env: inheritedEnv() })
+  if (r.error) throw new KitError(`could not start ${path.basename(claude.cmd)}: install Claude Code, or ${hint}`)
+  const version = /^(\d+\.\d+\.\d+)/.exec(r.stdout ?? '')?.[1]
+  if (r.status !== 0 || !version) throw new KitError(`could not read the Claude Code version from ${path.basename(claude.cmd)}`)
+  if (opts.requirePinned && version !== opts.pinned) throw new KitError(`Claude Code ${version} found; this run requires the pinned ${opts.pinned}`)
+  return version
+}
+
+type RunOutcome = { exit: number | null; timedOut: boolean; seconds: number; stderr: string }
+
+function runClaude(claude: ClaudeCommand, args: string[], cwd: string, env: NodeJS.ProcessEnv, stdin: string | undefined, timeoutMs: number): Promise<RunOutcome> {
+  return new Promise(resolve => {
+    const t0 = Date.now()
+    const child = spawn(claude.cmd, [...(claude.args ?? []), ...args], { cwd, env, stdio: [stdin === undefined ? 'ignore' : 'pipe', 'ignore', 'pipe'] })
+    let stderr = ''
+    let timedOut = false
+    let graceTimer: NodeJS.Timeout | undefined
+    const finish = (exit: number | null): void => {
+      clearTimeout(timer)
+      clearTimeout(graceTimer)
+      resolve({ exit, timedOut, seconds: Math.round((Date.now() - t0) / 100) / 10, stderr })
+    }
+    const timer = setTimeout(() => {
+      timedOut = true
+      child.kill('SIGKILL')
+      // A killed process's own children can hold the pipes open, so don't wait for 'close' for ever.
+      graceTimer = setTimeout(() => finish(null), KILL_GRACE_MS)
+    }, timeoutMs)
+    child.stderr?.on('data', c => { if (stderr.length < 8192) stderr += c })
+    child.stdin?.on('error', () => {})
+    child.stdin?.end(stdin)
+    child.on('error', () => finish(null))
+    child.on('close', code => finish(code))
+  })
+}
+
+type DoorState = { name: string; witness: string; witnessId: string; witnessSeen: boolean; fakes: { id: string; fake: Fake; form: PlantForm; hits: { part: Part; form: string; path: string; request: string }[] }[] }
+
+function plantDoors(scenario: Scenario): DoorState[] {
+  const src = randomSource()
+  return scenario.doors.map(name => ({
+    name,
+    witness: makeWitness(src),
+    witnessId: `witness:${scenario.name}/${name}`,
+    witnessSeen: false,
+    fakes: PLANTS.map(([kind, form]) => ({ id: `${scenario.name}/${name}/${kind}`, fake: makeFake(kind, src), form, hits: [] })),
+  }))
+}
+
+const needlesOf = (doors: DoorState[]): Needle[] =>
+  doors.flatMap(d => [witnessNeedle(d.witnessId, d.witness), ...d.fakes.flatMap(f => needlesFor(f.id, f.fake.value))])
+
+function makeCtx(dir: string, doors: DoorState[]): Ctx {
+  const door = (name: string): DoorState => {
+    const d = doors.find(x => x.name === name)
+    if (!d) throw new KitError(`scenario uses an undeclared door: ${name}`)
+    return d
+  }
+  return {
+    dir,
+    witness: name => door(name).witness,
+    block: name => [door(name).witness, ...door(name).fakes.map(f => plant(f.fake, f.form))].join('\n'),
+  }
+}
+
+function collectHits(record: RequestRecord, runIndex: number, doors: DoorState[], countFrom: number): void {
+  if (runIndex < countFrom) return
+  for (const hit of record.hits) {
+    for (const d of doors) {
+      if (hit.fakeId === d.witnessId) d.witnessSeen = true
+      for (const f of d.fakes) {
+        if (hit.fakeId === f.id) f.hits.push({ part: hit.part, form: hit.form, path: record.path, request: `${runIndex}:${record.i}` })
+      }
+    }
+  }
+}
+
+function runArgs(prompt: string, run: Run, sessionId: string, plugin: string | null, mcpConfig: string | undefined): string[] {
+  return [
+    '-p', prompt,
+    ...(plugin && !run.withoutPlugin ? ['--plugin-dir', plugin] : []),
+    ...(run.resume ? ['--resume', sessionId] : ['--session-id', sessionId]),
+    ...(mcpConfig ? ['--mcp-config', mcpConfig, '--strict-mcp-config'] : []),
+    // Last: this flag takes several values and swallows what follows.
+    '--allowedTools', ...ALLOWED_TOOLS,
+  ]
+}
+
+const FIXTURES = path.join(import.meta.dirname, 'fixtures')
+
+function writeExtras(s: Scenario, ctx: Ctx, base: string, configDir: string): string | undefined {
+  if (s.contextHook) {
+    const file = path.join(base, 'context.txt')
+    fs.writeFileSync(file, ctx.block(s.contextHook))
+    const command = `node "${path.join(FIXTURES, 'context-hook.mjs')}" "${file}"`
+    fs.writeFileSync(path.join(configDir, 'settings.json'), JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [{ type: 'command', command, timeout: 30 }] }] } }))
+  }
+  if (!s.mcp) return undefined
+  const note = path.join(base, 'mcp-note.txt')
+  fs.writeFileSync(note, ctx.block(s.mcp))
+  const config = path.join(base, 'mcp.json')
+  const server = { type: 'stdio', command: process.execPath, args: [path.join(FIXTURES, 'mcp-server.mjs')], env: { LEAK_MCP_FILE: note } }
+  fs.writeFileSync(config, JSON.stringify({ mcpServers: { leak: server } }))
+  return config
+}
+
+function removeFolder(dir: string): boolean {
+  try {
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+    return true
+  } catch {
+    return false
+  }
+}
+
+type ScenarioOutcome = { doors: DoorState[]; runs: RunResult[]; unreadable: number; failed: boolean; leftover: boolean }
+
+async function runScenario(s: Scenario, opts: KitOptions, trap: { host: string; port: number }, disk: Map<string, Set<string>>, allNeedles: Needle[]): Promise<ScenarioOutcome> {
+  const base = fs.mkdtempSync(path.join(opts.scratch ?? os.tmpdir(), 'leak-'))
+  const work = path.join(base, 'work')
+  const configDir = path.join(base, 'config')
+  fs.mkdirSync(work)
+  fs.mkdirSync(configDir)
+  const doors = plantDoors(s)
+  const needles = needlesOf(doors)
+  allNeedles.push(...needles)
+  const ctx = makeCtx(work, doors)
+  const sessionId = randomUUID()
+  const runs: RunResult[] = []
+  let unreadable = 0
+  let failed = false
+  let leftover = false
+  try {
+    for (const [name, content] of Object.entries(s.files?.(ctx) ?? {})) fs.writeFileSync(path.join(work, name), content)
+    const mcpConfig = writeExtras(s, ctx, base, configDir)
+    for (const [index, run] of s.runs.entries()) {
+      const mock = await startLeakMock({ script: run.script(ctx), needles })
+      const env = runEnv(mock, trap, configDir, opts.extraEnv)
+      const args = runArgs(run.prompt(ctx), run, sessionId, opts.plugin, mcpConfig)
+      const outcome = await runClaude(opts.claude, args, work, env, run.stdin?.(ctx), opts.timeoutMs ?? RUN_TIMEOUT_MS)
+      await mock.close()
+      for (const r of mock.records) {
+        collectHits(r, index, doors, s.countFromRun ?? 0)
+        if (r.unreadable) unreadable += 1
+      }
+      const bad = outcome.timedOut || outcome.exit !== 0
+      if (bad) failed = true
+      runs.push({
+        scenario: s.name,
+        run: index,
+        exit: outcome.exit,
+        timedOut: outcome.timedOut,
+        seconds: outcome.seconds,
+        requests: mock.records.length,
+        ...(bad ? { stderr: scrub(outcome.stderr, needles).split(/\r?\n/).filter(l => l.trim() !== '').slice(0, 4).map(l => l.slice(0, 200)) } : {}),
+      })
+    }
+    searchDisk(configDir, needles.filter(n => !n.fakeId.startsWith('witness:')), disk)
+  } finally {
+    // In finally: the folder holds this run's fakes, so it goes even if a step throws.
+    if (!opts.keep) leftover = !removeFolder(base)
+  }
+  return { doors, runs, unreadable, failed, leftover }
+}
+
+function doorVerdict(d: DoorState, expect: KitOptions['expect'], failed: boolean): Verdict {
+  const leaked = d.fakes.filter(f => f.hits.length > 0).length
+  if (expect === 'clean' && leaked > 0) return 'leak'
+  if (failed || !d.witnessSeen) return 'invalid'
+  if (expect === 'leaks' && leaked < d.fakes.length) return 'blind'
+  return 'pass'
+}
+
+const unique = <T>(items: T[]): T[] => [...new Set(items)]
+
+function doorResult(scenario: string, d: DoorState, verdict: Verdict): DoorResult {
+  return {
+    scenario,
+    door: d.name,
+    witnessSeen: d.witnessSeen,
+    verdict,
+    fakes: d.fakes.map(f => ({
+      id: f.id,
+      kind: f.fake.kind,
+      plantedAs: f.form,
+      leaked: f.hits.length > 0,
+      forms: unique(f.hits.map(h => h.form)).sort(),
+      parts: unique(f.hits.map(h => h.part)).sort(),
+      paths: unique(f.hits.map(h => h.path)).sort(),
+      requests: unique(f.hits.map(h => h.request)).length,
+    })),
+  }
+}
+
+function overall(doors: DoorResult[], attempts: Attempt[], unreadable: number): Verdict {
+  if (doors.length === 0) return 'invalid'
+  if (doors.some(d => d.verdict === 'leak')) return 'leak'
+  if (attempts.length > 0 || unreadable > 0 || doors.some(d => d.verdict === 'invalid')) return 'invalid'
+  if (doors.some(d => d.verdict === 'blind')) return 'blind'
+  return 'pass'
+}
+
+/** The last check before a report leaves the kit. */
+export function assertNoFakes(text: string, needles: readonly Needle[]): void {
+  if (holdsFake(text, needles)) throw new KitError('a fake reached the report; it was not printed')
+}
+
+export const exitCodeFor = (r: Report): number => (r.verdict === 'pass' ? 0 : r.verdict === 'invalid' ? 2 : 1)
+
+export async function runKit(opts: KitOptions): Promise<Report> {
+  const claudeVersion = checkVersion(opts.claude, opts)
+  const trap = await startTrap()
+  const disk = new Map<string, Set<string>>()
+  const allNeedles: Needle[] = []
+  const doors: DoorResult[] = []
+  const runs: RunResult[] = []
+  let unreadable = 0
+  let leftovers = 0
+  try {
+    for (const s of opts.scenarios ?? SCENARIOS) {
+      const out = await runScenario(s, opts, trap, disk, allNeedles)
+      for (const d of out.doors) doors.push(doorResult(s.name, d, doorVerdict(d, opts.expect, out.failed)))
+      runs.push(...out.runs)
+      unreadable += out.unreadable
+      if (out.leftover) leftovers += 1
+    }
+  } finally {
+    await trap.close()
+  }
+  const attempts = trap.attempts
+  const report: Report = {
+    kit: 1,
+    expect: opts.expect,
+    os: `${process.platform}-${process.arch}`,
+    claudeVersion,
+    ...(opts.pinned ? { pinnedVersion: opts.pinned } : {}),
+    plugin: opts.plugin ? path.basename(opts.plugin) : 'none',
+    verdict: overall(doors, attempts, unreadable),
+    doors,
+    runs,
+    network: { attempts },
+    unreadable,
+    disk: summarizeDisk(disk),
+    leftovers,
+  }
+  assertNoFakes(JSON.stringify(report), allNeedles.filter(n => !n.fakeId.startsWith('witness:')))
+  return report
+}

@@ -10,6 +10,7 @@ import { append } from './log.ts'
 import { registerMention } from './checks/mention.ts'
 import { registerResumeTurns, resumeAtStart } from './checks/resume.ts'
 import { runtimeAtStart } from './checks/runtime.ts'
+import { storeAtStart } from './checks/store.ts'
 import { mediaLog, mediaRewrite } from './checks/media.ts'
 import { hideLog, hideRewrite } from './checks/hide.ts'
 import { budgetBefore, budgetCatch } from './checks/budget.ts'
@@ -33,6 +34,7 @@ export const register: Register = on => {
     // Opt-in checks (each off unless <cwd>/.step0-probe/on-<name> exists).
     await resumeAtStart($)
     await runtimeAtStart($)
+    await storeAtStart($)
     return out
   }).catch(($, e, next) => next(e))
 

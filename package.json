@@ -10,7 +10,9 @@
   },
   "scripts": {
     "test": "node --test \"tests/**/*.test.ts\"",
-    "typecheck": "tsc -p ."
+    "typecheck": "tsc -p .",
+    "leak-test": "node tools/leak-test/run.ts",
+    "leak-test:baseline": "node tools/leak-test/run.ts --expect leaks --plugin tools/leak-test/fixtures/empty-plugin"
   },
   "devDependencies": {
     "@types/node": "24.19.2",
