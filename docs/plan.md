@@ -3,7 +3,7 @@
 How we build the tool described in `spec.md`, and how we prove it works.
 
 - **Status:** draft.
-- **Last updated:** 31 October 2026.
+- **Last updated:** 31 October 2026 (regrouped into 7 steps, D-018; scope cuts, D-019).
 
 ---
 
@@ -11,8 +11,24 @@ How we build the tool described in `spec.md`, and how we prove it works.
 
 1. **Test first.** Build the leak tests before the features, so every feature is proven the day it's added.
 2. **One checker, one language.** v1 is written entirely in TypeScript. The main lock and the backup lock use the same checker, so they always agree.
-3. **Measure, don't assume.** Speed, catch rate and false alarms are measured on every change and published.
+3. **Measure, don't assume.** Speed, catch rate and false alarms are measured and published.
 4. **Anyone can repeat our tests.** Every test we run, an adopter can run on their own machine, with no API key and no network.
+
+## The 7 steps
+
+One step = one session: `/plan-step` → approve → build → `/verify` → `/ship` (PR into `develop`). Branch `step-<n>`.
+
+| Step | What | Done when |
+|---|---|---|
+| 0 | **Facts** about Claude Code | Every kept check has a result in `findings-step0.md`; findings applied to the spec; no [Step 0] blocker left |
+| 1 | **Test kit** | Against the empty tool, every planted fake is reported leaked; CI runs it on 3 OSes |
+| 2 | **Checker** | Every rule compiles or is rejected with a reason; code set fully unhidden; catch, false-alarm and speed numbers printed |
+| 3 | **Core hiding** (store, decoder, plugin, `session.append`) | Leak test clean for prompt, Read, Bash, errors, MCP, subagent, compaction. **Audit 1.** |
+| 4 | **Rest of the main lock** | Leak test clean for everything v1 covers; all commands work; `claude plugin validate`/`test` pass |
+| 5 | **Backup lock + tuning** | Safe-mode leak test passes within the backup lock's limits; targets set, written down and met |
+| 6 | **Release** | A newcomer installs and verifies from the README alone. **Audit 2.** |
+
+**Audits** (steps 3 and 6, before `/ship`): built-in `/security-review` and `/code-review high` on the step's diff.
 
 ## Ground rules
 
@@ -20,16 +36,18 @@ How we build the tool described in `spec.md`, and how we prove it works.
 - **Dependencies:**
   - None at runtime.
   - Build and test tools are dev dependencies, pinned with a lockfile.
-- **Testing:** done against fixed Claude Code versions, never just "latest".
+- **Testing:** done against a fixed Claude Code version, never just "latest".
 - **CI:** GitHub Actions on macOS, Windows and Linux, with actions pinned to commit IDs (not tags).
-- **Releases:** semantic versions, signed tags, SHA-256 checksums.
+- **Releases:** semantic versions, SHA-256 checksums.
 - **Fake secrets only:** built at test time from pieces, never written whole in a file.
 
 ---
 
-## Step 0: Check the facts on a local machine
+## Step 0: Facts
 
 The design depends on how Claude Code behaves. Some of it was confirmed by reading the mod API types in Claude Code 2.1.316. The rest must be confirmed by running it. All of this works on a personal computer.
+
+Done so far: repo setup (old 0.0) and the probe mod `experiments/step0-probe/` (old 0.A).
 
 | # | Check | Why it matters (spec section) |
 |---|---|---|
@@ -44,25 +62,26 @@ The design depends on how Claude Code behaves. Some of it was confirmed by readi
 | 0.9 | Settings hooks can change a tool's input (`PreToolUse`), and whether they can rewrite a built-in tool's output (`PostToolUse`) | Backup lock limits (5.2) |
 | 0.10 | A plugin hides content in the VS Code panel and the desktop Code tab | Surfaces (4) |
 | 0.11 | Claude Code accepts a local mock API through `ANTHROPIC_BASE_URL` (what env and auth it needs) | The leak test kit (20) |
-| 0.12 | The lowest Claude Code version where all of the above work | Tested versions (4) |
+| ~~0.12~~ | ~~Lowest working Claude Code version~~ | Parked (spec §23, D-019) |
 | 0.13 | Node is available where the backup lock runs. If not, we ship it as a single program file. | Backup lock |
+| 0.14 | Whether `disableAllHooks` (in project, local or user settings), `--bare` and `CLAUDE_CODE_SIMPLE` switch off the mod and the settings hooks (D-021) | Self-protection, known limits (3, 17, 22), `doctor` |
+
+How the checks are run (D-020): headless checks run against a local mock of the model API (`experiments/step0-mock/`, `claude -p`, no API key); the interactive terminal, VS Code and the desktop app are run by hand.
 
 ### Simulating Managed mode on your own computer
 
 You don't need an organization to test Managed mode:
 1. With admin rights, create the managed settings file at the system location for your OS. Claude Code's docs list the paths (on Windows, under `C:\Program Files\ClaudeCode\`).
 2. Put the plugin in it in the `prepend` tier, with locked settings and `allowManagedHooksOnly`.
-3. Better still, do this in a throwaway VM (Windows Sandbox, UTM or VirtualBox), so your own setup stays clean.
+3. Better still, do this in a throwaway VM (Windows Sandbox, UTM or VirtualBox), so your own setup stays clean. Windows Sandbox needs Windows Pro or Enterprise; on Windows Home, use a temporary managed settings file and delete it right after the run (D-020).
 
 This tests checks 0.2, 0.7 and the Managed-mode rows of spec 5.3 the way an organization would see them.
 
-**Delivers:** `docs/findings-step0.md` (each check: yes or no, Claude Code version, OS, how it was tested) and a GitHub repo.
-
-**Done when:** every row has a confirmed answer. If any answer is "no", update `spec.md` before going further.
+**Delivers:** `docs/findings-step0.md` (each check: yes or no, Claude Code version, OS, how it was tested). Any "no" is applied to `spec.md` in the same step.
 
 ---
 
-## Step 1: Build the tests first
+## Step 1: Test kit
 
 ### 1a. Leak test kit (the most important test)
 
@@ -84,7 +103,7 @@ This tests checks 0.2, 0.7 and the Managed-mode rows of spec 5.3 the way an orga
 5. **Search the disk too.** Search `~/.claude` and record what Claude Code keeps on disk. This is reported, not failed, since some of it is outside our control.
 6. **Optional real run.** The same scenarios against the real API, run by the maintainer before each release.
 
-Run it in the terminal, VS Code, the desktop app and `-p` runs, on each tested Claude Code version and on macOS, Windows and Linux.
+CI runs it with `claude -p` on the pinned Claude Code version on macOS, Windows and Linux. The interactive terminal, VS Code and the desktop app are checked by hand once before release.
 
 The kit lives in `tools/leak-test/` and is part of the release, so adopters can run it (spec 20).
 
@@ -93,9 +112,10 @@ The kit lives in `tools/leak-test/` and is part of the release, so adopters can 
 | Set | Purpose | Contents |
 |---|---|---|
 | **Catch set** | Measure how much we catch | Realistic fake secrets in many places: env files, JSON, YAML, logs, URLs, connection strings, stack traces, escaped JSON, base64. Cloud, CI, artifact-repository and data-platform key formats, connection strings, short human passwords. |
-| **Code set** (new) | Prove labels don't hide normal code | `password: string`, `token = getToken()`, Python `pass`, `os.environ[...]`, type hints, template variables. Must stay unhidden (spec 7.2, R-08). |
-| **Hidden set** | Honest score | Written before tuning, kept out of the repo's tuning scripts, scored once per release. Never tuned against. |
-| **False-alarm set** | Measure how often harmless text gets hidden | Tens of thousands of normal files from public open-source projects (licenses recorded) |
+| **Code set** | Prove labels don't hide normal code | `password: string`, `token = getToken()`, Python `pass`, `os.environ[...]`, type hints, template variables. Must stay unhidden (spec 7.2, R-08). |
+| **False-alarm set** | Measure how often harmless text gets hidden | The `.ts` / `.d.ts` files under `node_modules/typescript` (Apache-2.0) and `node_modules/@types/node` (MIT), already installed as pinned dev deps. No download. |
+
+The hidden set and a large downloaded corpus are parked (spec §23, D-019).
 
 ### 1c. Speed set
 
@@ -106,15 +126,11 @@ The kit lives in `tools/leak-test/` and is part of the release, so adopters can 
 - 10,000 registered secrets.
 - Inputs designed to slow patterns down.
 
-**Delivers:** all of the above, running automatically in CI on three operating systems.
-
-**Done when:** the tests run against an "empty" tool and correctly report every fake secret as leaked.
-
 ---
 
-## Step 2: Build the checker
+## Step 2: Checker
 
-Build in this order, testing each part before moving on:
+Build in this order, testing each piece before moving on:
 
 1. **Gitleaks rule converter** (runs at build time)
    - Turns Gitleaks patterns into JavaScript patterns. Some (38 of 222 in the version checked) don't work as-is.
@@ -124,78 +140,58 @@ Build in this order, testing each part before moving on:
 2. **Keyword finder.** Reads the text once and finds all keywords at the same time.
 3. **Pattern runner.** Runs only the patterns whose keywords were found, only on the area around each hit.
 4. **Password labels.** The exact grammar in spec 7.1, plus the harmless values in 7.2. Must pass the code set.
-5. **Registered-secret store and matcher**
-   - Encrypted file plus key in the OS password store (spec 8.1), using the Step 0.4 result.
+5. **Repeated-line skip.** Cleared when a new secret is registered.
+6. **Custom rules and per-rule actions** from settings, with the "can't get stuck" check (R-15).
+
+---
+
+## Step 3: Core hiding
+
+1. **Registered-secret store and matcher**
+   - The list locked by the OS password store through `$.process` (spec 8.1, D-023; the plugin has no AES, check 0.4).
    - Aho-Corasick over the secrets and their encoded forms.
-6. **Decoder.** Decodes only what looks encoded, in pieces, at most 3 layers.
-7. **Repeated-line skip.** Cleared when a new secret is registered.
-8. **Custom rules and per-rule actions** from settings, with the "can't get stuck" check (R-15).
+2. **Decoder.** Decodes only what looks encoded, in pieces, at most 3 layers.
+3. **Plugin skeleton**, **settings** (three levels, "stricter only" rules, validation, admin locks; spec 14) and **log** (spec 16). The checker in `src/checker/` is copied or bundled into `plugin/` (mods import only files inside the plugin folder).
+4. **Hide secrets** at `session.append` and `prompt.submit` (spec 5.1).
+5. **Check-failure behaviour** with `.catch` handlers (spec 12, R-03, R-12).
+6. **"I'm running" marker** (R-04).
+7. **Placeholders** with hints and tags, shared with subagents, plus the stable instructions note (spec 9).
 
-**Done when:**
-- Catch, code and false-alarm results are recorded.
-- Speed targets are set from first measurements, written into the repo, and met.
-- No pattern can get stuck.
-- Each part has its own tests.
-
----
-
-## Step 3: Build the main lock (mod)
-
-1. **Hide secrets** at `session.append` and `prompt.submit` (spec 5.1).
-2. **`@` files** through `prompt.mention` (spec 5.3).
-3. **Placeholders** with hints and tags, shared with subagents, plus the stable instructions note (spec 9).
-4. **Placeholder-in-file notice and overwrite guard** (spec 10, R-11).
-5. **Outbound check** with `block`, `ask`, `warn`, `off` and `/redact allow` (spec 11).
-6. **Check-failure behaviour** with `.catch` handlers (spec 12, R-03, R-12).
-7. **Resume scan** and **mid-session registration warning** (spec 6.1, 6.2).
-8. **Media** `pass` / `drop` (spec 6).
-9. **Observe mode** with the banner (spec 13).
-10. **Self-protection** (spec 17).
-11. **"I'm running" marker** (R-04).
-12. **Settings:** three levels, "stricter only" rules, validation, admin locks (spec 14).
-13. **Commands:** `/redact`, `add`, `learn`, `allow`, `self-check [--report]`, `doctor` (spec 15).
-14. **Log** (spec 16).
-15. **Version check** on startup (R-01).
-
-**Done when:**
-- The leak test shows zero leaks for everything the spec says v1 covers.
-- All commands work.
-- `claude plugin validate` and `claude plugin test` pass.
-- The maintainer has used it for their own daily work for at least two weeks.
+Then **Audit 1**.
 
 ---
 
-## Step 4: Build the backup lock
+## Step 4: Rest of the main lock
+
+1. **`@` files** through `prompt.mention` (spec 5.3).
+2. **Outbound check** with `block`, `ask`, `warn`, `off` and `/redact allow` (spec 11).
+3. **Placeholder-in-file notice and overwrite guard** (spec 10, R-11).
+4. **Resume scan** and **mid-session registration warning** (spec 6.1, 6.2).
+5. **Media** `pass` / `drop` (spec 6).
+6. **Observe mode** with the banner (spec 13).
+7. **Self-protection** (spec 17).
+8. **Commands:** `/redact`, `add`, `learn`, `allow`, `self-check [--report]`, `doctor` (spec 15).
+9. **Version check** on startup (R-01).
+
+---
+
+## Step 5: Backup lock and tuning
 
 1. **Settings hooks:**
    - before each tool: outbound check
-   - after each tool: clean the output where Step 0.9 allows; otherwise rewrite the input before it runs
+   - after each tool: clean the output where check 0.9 allows; otherwise rewrite the input before it runs
    - on each prompt: block prompts with secrets
 2. **Same checker** as the main lock, run with Node.
 3. **Only act when needed.** Each hook looks for the main lock's marker and does nothing when it is there.
 4. **Block on failure** or not, following `on_check_failure`.
 5. **Install snippets** for Personal mode (`~/.claude/settings.json`) and Managed mode.
-
-**Done when:** the leak test passes in safe mode, within the backup lock's limits (prompts blocked rather than partly hidden).
-
----
-
-## Step 5: Pilot
-
-1. **The maintainer and volunteers** install it in Personal mode.
-2. **Managed trial** in the Step 0 VM, and with any organization that volunteers, starting in `observe` mode.
-3. **Collect false alarms** through `/redact allow` usage, the log and GitHub issues with `doctor` output. The log contains no secrets, so it's safe to share.
-4. **Tune** the rules and harmless-value list on the catch, code and false-alarm sets, never on the hidden set.
-5. **Test a "looks random" check** (spec 7.3). Add it only if it catches more without many more false alarms.
-
-**Done when:**
-- False alarms are at or below the published target.
-- No speed complaints.
-- The hidden set has been scored once and recorded.
+6. **Managed-mode run** in the Step 0 VM, starting in `observe` mode.
+7. **Tune** the rules and harmless-value list on the catch, code and false-alarm sets.
+8. **Set the targets** for speed, catch rate and false alarms from the measurements, write them into the repo, and meet them.
 
 ---
 
-## Step 6: Open-source release
+## Step 6: Release
 
 1. **Repo files:**
    - `LICENSE` (Apache-2.0), `NOTICE`, `THIRD_PARTY_LICENSES` (Gitleaks, MIT)
@@ -205,11 +201,13 @@ Build in this order, testing each part before moving on:
 3. **Docs:**
    - `README` (what it does, 2-minute install, limits)
    - `docs/personal.md`, `docs/managed.md`, `docs/verify.md` (running the leak test kit), `docs/troubleshooting.md`
-4. **Results:** compatibility matrix and scores for this release.
-5. **Release:** signed tag, archive, checksums, changelog.
+4. **Results:** tested-versions list and scores for this release.
+5. **Release:** tag, archive, SHA-256 checksums, changelog.
 6. **Final name** chosen and checked (spec header).
 
-**Done when:** a person who has never seen the project can install it, run `/redact doctor`, `/redact self-check` and the leak test kit, and get passing results by following the README alone, on all three operating systems.
+Before release, the maintainer uses it for their own daily work for at least two weeks.
+
+Then **Audit 2**.
 
 ---
 
@@ -221,11 +219,10 @@ Build in this order, testing each part before moving on:
 | Speed within published targets | Blocks release |
 | Catch rate on the catch set not lower than last release | Blocks release |
 | False alarms not higher than the published limit; code set fully unhidden | Blocks release |
-| All tests pass on every tested Claude Code version and all three operating systems | Blocks release |
-| Compatibility matrix and scores published | Blocks release |
-| Hidden set scored once and recorded | Reported |
+| All tests pass on the pinned Claude Code version and all three operating systems | Blocks release |
+| Tested-versions list and scores published | Blocks release |
 
-Targets for speed, catch rate and false alarms are set by the maintainer after Step 2's first measurements and published in the repo. Any change to a target is noted in the changelog.
+Targets for speed, catch rate and false alarms are set by the maintainer in Step 5 and published in the repo. Any change to a target is noted in the changelog.
 
 ---
 
@@ -233,7 +230,7 @@ Targets for speed, catch rate and false alarms are set by the maintainer after S
 
 | Risk | How we handle it |
 |---|---|
-| A Claude Code update changes how plugins work | Test on fixed versions; publish a tested-versions list; startup warning on untested versions (R-01) |
+| A Claude Code update changes how plugins work | Test on a fixed version; publish a tested-versions list; startup warning on untested versions (R-01) |
 | A pattern gets stuck and the hook is skipped | Build-time checks, small search areas, speed tests, `.catch` handlers. The backup lock steps in if the plugin goes down. |
 | Too many false alarms, people turn it off | Code set, false-alarm set, observe-mode trials, `/redact allow`, admin locks |
 | A check fails and content passes (default setting) | Visible warning and log entry every time. Admins can switch to `hold`. |
@@ -247,4 +244,4 @@ Targets for speed, catch rate and false alarms are set by the maintainer after S
 
 ## Later (not in v1)
 
-See spec section 23.
+Everything parked lives in spec section 23.

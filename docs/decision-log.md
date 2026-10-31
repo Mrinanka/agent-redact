@@ -29,27 +29,36 @@ Tiny clarifications go under **Minor** at the bottom.
 | D-001 | License: Apache-2.0 | accepted | setup | 21 |
 | D-002 | Two audiences: Personal mode and Managed mode | accepted | setup | 5.3 |
 | D-003 | Add observe mode | accepted | setup | 13 |
-| D-004 | Store registered secrets encrypted, not as fingerprints | **proposed** | setup | 8.1 |
+| D-004 | Store registered secrets encrypted, not as fingerprints | superseded by D-023 | setup | 8.1 |
 | D-005 | Default `on_check_failure: allow` | accepted | setup | 12 |
 | D-006 | No putting secrets back into files in v1 | accepted | setup | 10 |
-| D-007 | Build workflow: slash commands, one part per session, commit at wrap-up, docs in `docs/` | accepted | setup | — |
+| D-007 | Build workflow: slash commands, one part per session, commit at wrap-up, docs in `docs/` | superseded by D-018 | setup | — |
 | D-008 | Credit only code actually copied | accepted | setup | 21 |
 | D-009 | Every question comes with a researched, evidence-backed recommendation | accepted | setup | — |
+| D-010 | Test runner: `node:test` with native type stripping; `tsc` only typechecks | accepted | 0.0 | 21 |
+| D-011 | CI: 3-OS matrix, SHA-pinned actions, timeout + concurrency; tick 0.0 after a green push | accepted | 0.0 | 4 |
+| D-012 | Node 24 LTS for development and CI | accepted | 0.0 | 4 |
+| D-013 | LF line endings on every OS (`.gitattributes`) | accepted | 0.0 | 4, 7, 18 |
+| D-014 | Rejected review finding: test that `.nvmrc` matches `engines` | accepted | 0.0 | — |
+| D-015 | End-of-step PRs: Claude opens the PR, the owner merges | superseded by D-018 | 0.0 | — |
+| D-016 | Step 0 probe lives in `experiments/step0-probe/`, loaded with `--plugin-dir` | accepted | 0.A | 5.1 |
+| D-017 | Probe log: `<cwd>/.step0-probe/<session id>.jsonl`, metadata only | accepted | 0.A | 5.1 |
+| D-018 | Slim workflow: 7 steps, 3 commands, 2 audits | accepted | step 0 | — |
+| D-019 | Scope cuts: test sets and release extras parked | accepted | step 0 | 4, 7.3, 20, 23 |
+| D-020 | Step 0 checks: local mock for headless runs, temporary managed settings file, macOS/Linux finished in step 1 | accepted | step 0 | 4, 5.3, 8.1, 20 |
+| D-021 | Add check 0.14: hook kill switches (`disableAllHooks`, `--bare`, `CLAUDE_CODE_SIMPLE`) | accepted | step 0 | 3, 17, 22 |
+| D-022 | Apply the step 0 findings to the spec | accepted | step 0 | 4, 5, 6.1, 12, 18, 20, 22 |
+| D-023 | Registered secrets are locked by the OS password store, not by our own AES | accepted | step 0 | 8.1, R-10 |
 
-## Entry template
+## Entry template (short form, from D-018 on)
 
 ```
 ## D-0xx: <title>
-- Date / Part: YYYY-MM-DD / <part id>        Status: proposed | accepted | superseded by D-0xx
-- Context: why a decision was needed
-- Options considered: A … / B … / C …
+- Date / Step: YYYY-MM-DD / <n>        Status: proposed | accepted | superseded by D-0xx
 - Decision: what we chose
-- Why: the deciding reasons, in the owner's words where they gave them
-- Evidence: the sources the recommendation rested on (file:line, docs URL + section,
-            test or benchmark output, findings-step0 rows, D-ids)
-- Trade-offs: what we give up, what it affects
-- Revisit when: the signal that should make us reconsider
-- Links: spec §, R-ids, files, commits
+- Why: the deciding reason, in the owner's words where they gave them
+- Rejected: the main alternative(s), and why not
+- Evidence: what backed it (file:line, docs URL, test output, findings row, D-id)
 ```
 
 ---
@@ -85,7 +94,7 @@ Tiny clarifications go under **Minor** at the bottom.
 - Links: spec §13, §20; R-13.
 
 ## D-004: Store registered secrets encrypted, not as fingerprints
-- Date / Part: 2026-10-31 / setup. Status: **proposed: needs the owner's explicit confirmation**
+- Date / Part: 2026-10-31 / setup. Status: superseded by D-023 (the plugin runtime has no AES, check 0.4)
 - Context: The first draft stored only keyed fingerprints plus length, so a copied file couldn't reveal even short passwords. The same draft wanted (a) the same cost for 10 or 10,000 secrets and (b) finding secrets inside base64 without decoding.
 - Options considered:
   - A) Keyed fingerprints at every position for every registered length. Too slow on large outputs.
@@ -118,7 +127,7 @@ Tiny clarifications go under **Minor** at the bottom.
 - Links: spec §10, §23; R-11.
 
 ## D-007: Build workflow
-- Date / Part: 2026-10-31 / setup. Status: accepted
+- Date / Part: 2026-10-31 / setup. Status: superseded by D-018
 - Context: The tool is built with Claude Code across many sessions, so progress and reasoning must survive between them.
 - Options considered: Slash commands / a copy-paste prompt file / both. Claude commits at wrap-up / the owner commits. Docs in the root / in `docs/`.
 - Decision:
@@ -152,8 +161,173 @@ Tiny clarifications go under **Minor** at the bottom.
 - Revisit when: A `/step-retro` shows the research overhead outweighs the benefit for small questions.
 - Links: `CLAUDE.md` ("Questions and recommendations"); every command in `.claude/skills/`.
 
+## D-010: Test runner: `node:test` with native type stripping; `tsc` only typechecks
+- Date / Part: 2026-10-31 / 0.0. Status: accepted
+- Context: Every later part needs a test runner and a typecheck. CLAUDE.md forbids runtime libraries and asks for few pinned dev deps.
+- Options considered: A) `node:test` with Node running `.ts` directly, plus `tsc --noEmit` / B) Vitest / C) `tsc` builds to `dist/`, then `node:test` runs that.
+- Decision: A. Dev deps are exactly `typescript@7.0.2` and `@types/node@24.19.2`, installed with npm. `erasableSyntaxOnly` and `allowImportingTsExtensions` are on.
+- Why: It needs the fewest third-party packages of any option (4 installed), which suits a security tool. There's no build step, and it's proven on this machine. (Drafted from the session's evidence; the owner confirmed it.)
+- Evidence: A scratch run on Node v24.22.1 (Windows), where `npm test` ran `node --test "tests/**/*.test.ts"` and passed. `tsc` 7.0.2 rejected an enum with TS1294 under `erasableSyntaxOnly`. npm registry: typescript 7.0.2 published 2026-07-08.
+- Trade-offs: No enums, namespaces or parameter properties. No watch UI or snapshots. Relative imports carry `.ts` extensions.
+- Revisit when: tests need features `node:test` lacks, or Node type stripping changes.
+- Links: CLAUDE.md "Rules"; plan "Ground rules"; `package.json`, `tsconfig.json`.
+
+## D-011: CI: 3-OS matrix, SHA-pinned actions, timeout + concurrency; tick 0.0 after a green push
+- Date / Part: 2026-10-31 / 0.0. Status: accepted
+- Context: 0.0's "done when" needs the test to pass in CI, but the repo has no remote and Claude never pushes. An independent review (finding 6) noted there was no job timeout and that PRs would run twice.
+- Options considered: Three-OS now, ticked after the owner's push / three-OS now, ticked at wrap-up / Ubuntu only until 1.8. For finding 6: a timeout and concurrency group / also a push branch filter / defer to 1.8.
+- Decision: Ubuntu, Windows and macOS on Node from `.nvmrc`, with `npm ci --ignore-scripts`. Actions pinned to commit SHAs: checkout v7.0.1 `3d3c42e5aac5ba805825da76410c181273ba90b1`, setup-node v7.1.0 `949feb2413d6458794dcd2491c4babbbce0c15c1`. `permissions: contents: read`; `persist-credentials: false`. The job times out after 15 minutes, and a concurrency group cancels older runs. Push still runs on all branches. 0.0 is ticked when the owner's push shows green.
+- Why: It keeps "done when" honest. Windows is the maintainer's OS, so catching its path bugs early matters, and spec §4 asks for CI on all three. The timeout limits the cost of a hang (the mock server arrives in 1.2). A branch filter could stop `step-*` branches getting CI before a PR exists. (Drafted from the session's evidence; the owner confirmed it.)
+- Evidence: `git ls-remote` on actions/checkout and actions/setup-node (lightweight tags, so commit SHAs). GitHub workflow syntax docs, `concurrency` and "Using multiple events" ("multiple workflow runs will be triggered"). The 360-minute default job timeout is from memory and unverified.
+- Trade-offs: The tick waits on the owner. Runs on three OSes cost more CI time.
+- Revisit when: part 1.8 extends the matrix, or CI minutes become a problem.
+- Links: spec §4; plan "Ground rules"; `.github/workflows/ci.yml`; `tests/repo-setup.test.ts`.
+
+## D-012: Node 24 LTS for development and CI
+- Date / Part: 2026-10-31 / 0.0. Status: accepted
+- Context: The test setup (D-010) relies on Node running `.ts` directly; dev and CI need one pinned Node.
+- Options considered: Node 24 only / Node 22 and 24 in CI.
+- Decision: `.nvmrc` is `24`, `engines.node` is `>=24`, and `engine-strict=true`. The minimum Node for *users* (the backup lock) is not decided here; that is check 0.13 / part 0.E.
+- Why: It matches the maintainer's machine, and native `.ts` tests were verified on it. Node 22 support wasn't tested. (Drafted from the session's evidence; the owner confirmed it.)
+- Evidence: `node -p process.release.lts` printed `Krypton`; the scratch run on v24.22.1.
+- Trade-offs: Contributors on Node 22 have to upgrade.
+- Revisit when: 0.E / 0.13 sets the user-side minimum, or Node 26 becomes LTS.
+- Links: `.nvmrc`, `package.json`, `.npmrc`; findings-step0 row 0.13.
+
+## D-013: LF line endings on every OS (`.gitattributes`)
+- Date / Part: 2026-10-31 / 0.0. Status: accepted
+- Context: Independent review finding 8.
+- Options considered: Add `.gitattributes` now / wait until hashed or golden files exist.
+- Decision: `* text=auto eol=lf`, binary types marked as binary, plus a guard test. CRLF input is tested on purpose with fixtures built in the test, never by accident of checkout.
+- Why: The checker's regexes, anchors, offsets and test-set sizes must not depend on where the repo was cloned. Adding it before any fixtures exist costs nothing. (Drafted from the session's evidence; the owner confirmed it.)
+- Evidence: Git for Windows system config sets `core.autocrlf=true` (`git config --system --show-origin`: `C:/Program Files/Git/etc/gitconfig`). `git check-attr` shows `eol: lf` applied to existing files.
+- Trade-offs: None significant; Windows editors must handle LF, which all modern ones do.
+- Revisit when: a file genuinely needs CRLF, which would get a per-file attribute.
+- Links: spec §4, §7, §18; `.gitattributes`; `tests/repo-setup.test.ts`.
+
+## D-014: Rejected review finding: test that `.nvmrc` matches `engines`
+- Date / Part: 2026-10-31 / 0.0. Status: accepted
+- Context: Independent review finding 4 proposed a drift-guard test between `.nvmrc` and `package.json` `engines`.
+- Options considered: Add the test / reject.
+- Decision: Rejected.
+- Why: `engine-strict=true` already makes any harmful mismatch fail `npm ci` in CI, which installs Node from `.nvmrc`. The only drift that would pass silently is bumping `.nvmrc` to a higher version, which is harmless. (Drafted from the session's evidence; the owner confirmed it.)
+- Evidence: `.npmrc` (`engine-strict=true`), `package.json` engines `>=24`, `.nvmrc` `24`, all checked this session.
+- Trade-offs: None.
+- Revisit when: CI stops installing Node from `.nvmrc`, or `engine-strict` is removed.
+- Links: `.npmrc`, `.nvmrc`, `package.json`.
+
+## D-015: End-of-step PRs: Claude opens the PR, the owner merges
+- Date / Part: 2026-10-31 / 0.0. Status: superseded by D-018 (the PR now comes from `/ship` at the end of each step; the owner still merges)
+- Context: No rule said who opens and who merges the end-of-step PR into `develop`.
+- Options considered: Claude opens the PR at the end of `/step-retro` and the owner merges / the owner does both / Claude merges / a draft PR from the start of the step.
+- Decision: At the end of `/step-retro`, Claude pushes the step branch (no force), runs `gh pr create` into `develop`, and waits for CI. The owner reviews and merges; Claude never merges.
+- Why: It keeps the owner as the only gate into `develop` while saving them the routine push and PR steps. (Drafted from the session's evidence; the owner confirmed it.)
+- Evidence: A grep of CLAUDE.md, the skills and docs found no rule on PRs or merges; `gh` is logged in as Mrinanka (0.0 session notes).
+- Trade-offs: An exception to "never push", for the step branch only.
+- Revisit when: A step-retro shows PRs going stale, or the owner wants to push themselves.
+- Links: CLAUDE.md "Git"; `.claude/skills/step-retro/SKILL.md`.
+
+## D-016: Step 0 probe lives in `experiments/step0-probe/`, loaded with `--plugin-dir`
+- Date / Part: 2026-10-31 / 0.A. Status: accepted
+- Context: Parts 0.B, 0.C and 0.E extend the probe, and findings must be re-checked when the Claude Code version changes.
+- Options considered: In the repo under `experiments/` / in the session's dev-mods folder (the plugin-authoring skill's default, hot-reloaded, tied to one session id).
+- Decision: In the repo, `experiments/step0-probe/`, started with `claude --plugin-dir`.
+- Why: It's versioned, so a re-check reproduces the same evidence, and later parts can build on it. (Drafted from the session's evidence; the owner confirmed it.)
+- Evidence: `docs/findings-step0.md:9` (the re-check rule); `tsconfig.json` already excludes `experiments/`; the plugin-authoring skill (2.1.316) writes mods under `~/.claude/dev-mods/<session>/`.
+- Trade-offs: Sessions have to be started with `--plugin-dir`.
+- Revisit when: Step 0 ends (part 0.H): delete the probe or keep it for re-checks.
+- Links: spec §5.1; plan Step 0; findings "The probe"; `experiments/step0-probe/`.
+
+## D-017: Probe log: `<cwd>/.step0-probe/<session id>.jsonl`, metadata only
+- Date / Part: 2026-10-31 / 0.A. Status: accepted
+- Context: The probe needs somewhere to write one line per `session.append` row that is easy to read back and never holds content.
+- Options considered: The session's working folder / the probe's own folder / the debug log via `$.ui.log` / the plugin's `$.store`.
+- Decision: The session's working folder, gitignored, one JSONL file per session. The file is rewritten on each row, because `$.fs.write` replaces the whole file. Only fields on an allow-list are recorded, as types, ids and sizes.
+- Why: It's easy to find and stays outside the watched plugin folder, so writing it shouldn't reload the mod. (Drafted from the session's evidence; the owner confirmed it.)
+- Evidence: `claude-code.d.ts:3365` (`fs.write` replaces the whole file); plugin-authoring `reference.md:72` ("saving a file reloads the hooks module", read as applying to any file; untested); `claude-code.d.ts:3467` (`$.store` is a JSON file with a 4 MiB cap and no documented path). First real run: 17 rows logged, and a grep for the content found nothing.
+- Trade-offs: The log lands in whatever folder you test in, so use a scratch folder. Rewriting the whole file on every row costs O(n²), which is fine for a probe.
+- Revisit when: A log grows past 4 MiB (it then can't be read back, so the probe starts a new file), or the engine adds an append call.
+- Links: spec §5.1, §16; `experiments/step0-probe/hooks/register.ts`, `summarize.ts`; `.gitignore`.
+
+## D-018: Slim workflow: 7 steps, 3 commands, 2 audits
+- Date / Step: 2026-10-31 / 0. Status: accepted. Supersedes D-007 and D-015.
+- Decision:
+  - The 44 parts are merged into 7 steps, one session each.
+  - The 7 project commands are replaced by `/plan-step`, `/verify` and `/ship` (based on the owner's prompts from another project).
+  - `/ship` commits, pushes the step branch and opens a PR into `develop`; the owner merges.
+  - Per-part reviews, retros and `lessons.md` are dropped. Instead there are two audits (`/security-review` + `/code-review high`), after step 3 and before release.
+  - Decision entries use a short form.
+  - The question rule (D-009) stays, in compact form.
+- Why: The owner: "we just made your software building impossible". The ceremony costs tokens and time without adding quality. Tests-first, the leak test and a few real audits are what protect quality.
+- Rejected:
+  - Keeping 44 parts with lighter ceremony (still 44 sessions).
+  - 18 merged sessions (the owner judged it still too many).
+- Evidence: the old `docs/progress.md` had 44 parts × 4 commands each (~175 runs). Part 0.0 alone produced D-010 to D-015 before any product code.
+
+## D-019: Scope cuts: test sets and release extras parked
+- Date / Step: 2026-10-31 / 0. Status: accepted
+- Decision: Park the following in spec §23:
+  - the hidden test set
+  - the downloaded false-alarm corpus (replaced by the `.ts` files in `node_modules/typescript` and `node_modules/@types/node`)
+  - the full compatibility matrix and the lowest-version hunt (check 0.12); v1 tests one pinned version on 3 OSes
+  - signed tags (checksums only)
+  - the "looks random" check (old §7.3)
+- Why: The owner chose these cuts to save work without touching protection.
+- Rejected: Also parking the backup lock, and Managed mode with observe mode. The owner kept both, so D-002 and D-003 stand.
+- Evidence: Spec §5.2 and §13 (what the kept features cover); plan Step 1b and the release rules (where the cut items were required).
+
+## D-020: Step 0 checks: local mock for headless runs, temporary managed settings file, macOS/Linux finished in step 1
+- Date / Step: 2026-10-31 / 0        Status: accepted
+- Decision:
+  - Headless checks (0.1, 0.3, 0.5, 0.6, 0.9, 0.11, 0.14) run against a local mock of the model API in `experiments/step0-mock/`, with `claude -p`, a dummy `ANTHROPIC_API_KEY` and no network. Claude runs them; the owner runs the interactive terminal, VS Code and desktop checks by hand.
+  - Managed mode (0.7, 0.8) is simulated with a temporary `C:\Program Files\ClaudeCode\managed-settings.json` on the owner's PC, deleted right after the run.
+  - 0.4 (macOS `security`, Linux `secret-tool`) and 0.13 close as "partly (Windows)" and are finished in step 1's 3-OS CI, where `claude` gets installed for the leak test kit.
+- Why: The mock is free, repeatable on a new Claude Code version, and seeds step 1. The owner's machine runs Windows 11 Home, which has no Windows Sandbox or Hyper-V. There's no Mac or Linux machine available now.
+- Rejected: Real API runs by the owner (cost, not repeatable). A Docker container or VirtualBox VM for Managed mode (more setup, and Docker doesn't test Windows). Blocking step 0 on macOS and Linux.
+- Evidence: Scratch run this session: `claude -p` (2.1.316, Windows) against a local Node mock, with `ANTHROPIC_BASE_URL`, a dummy key and `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`, made 2 × `POST /v1/messages?beta=true` with `x-api-key` and no `authorization` header, and the probe logged 14 rows. Managed settings paths: code.claude.com/docs/en/managed-settings. `wsl -l` lists only `docker-desktop`.
+
+## D-021: Add check 0.14: hook kill switches (`disableAllHooks`, `--bare`, `CLAUDE_CODE_SIMPLE`)
+- Date / Step: 2026-10-31 / 0        Status: accepted
+- Decision: New Step 0 check 0.14. It tests whether `disableAllHooks` (in a repo's `.claude/settings.json`, local or user settings), `--bare` and `CLAUDE_CODE_SIMPLE` switch off the mod and the settings hooks.
+- Why: Spec §3 counts "a file tells the tool to turn itself off" as in scope, and a cloned repo can carry this setting.
+- Rejected: Parking it in §23, which would leave a known kill switch undocumented through steps 3–5.
+- Evidence: code.claude.com/docs/en/hooks ("set `disableAllHooks: true` in your settings file"; it can't disable managed hooks unless set in managed settings). Scratch run this session: `claude --bare -p --plugin-dir <probe>` printed "hooks module not loaded: installed plugins that are not managed load no hooks module in this mode (--bare)".
+
+## D-022: Apply the step 0 findings to the spec
+- Date / Step: 2026-10-31 / 0        Status: accepted
+- Decision: Every [Step 0] item in the spec is replaced by what was found (findings-step0.md, checks 0.1–0.14). Main changes:
+  - §5.2: in Personal mode, safe mode turns off the backup lock too; only managed backup-lock hooks run in safe mode.
+  - §5.2: the backup lock can clean a built-in tool's output (`updatedToolOutput` in the tool's own shape).
+  - §5.3, §22, R-05: `disableAllHooks` in a project, `--bare` and `CLAUDE_CODE_SIMPLE` turn the tool off silently in Personal mode; `/redact doctor` must also work as a plain command with no hooks.
+  - R-06: read resumed history at the first `turn.start`, block by not sending the first request, and show our own message.
+  - §12, §18: the 10 s is the hook's own time; CPU-bound work is cut off at about 6 s.
+  - §4, §20: the VS Code extension has its own Claude Code version.
+  - §22: auto-memory and blocked prompts also land on disk.
+- Why: Step 0's purpose; the owner approved the list ("Yes, make them").
+- Rejected: Showing the exact wording first (the owner chose to apply directly).
+- Evidence: findings-step0.md rows 0.1–0.14; mock scenario summaries and the owner's interactive runs (2.1.316, VS Code 2.1.314, Windows 11 Home).
+
+## D-023: Registered secrets are locked by the OS password store, not by our own AES
+- Date / Step: 2026-10-31 / 0        Status: accepted. Supersedes D-004.
+- Decision: The list of registered secrets is locked by the OS password store itself (Windows DPAPI through PowerShell, macOS Keychain, Linux Secret Service), reached through `$.process`. No AES code of our own.
+- Why: The plugin runtime has no AES (`crypto.subtle` has `digest` only). The owner chose this option.
+- Rejected: Our own AES in TypeScript (hand-written crypto in a security tool is risky). Node does the AES (Node isn't on every machine, check 0.13).
+- Evidence: findings 0.4 (`claude-code.d.ts:16030`; test kit own keys `["digest"]`; live `subtle:false`; DPAPI round trip `roundtrip-ok`, ~0.8 s); 0.6 (waiting on `$.process` doesn't count toward the hook's time). Unverified: size limits of Keychain and Secret Service items, and the macOS/Linux commands (step 1).
+- With no password store, the tool runs without saved secrets instead of using a key file. The owner confirmed: "no one is running claude in a server or something with no password store".
+
 ---
 
 ## Minor
 
 - 2026-10-31: "secret-shield" is a working name. The final name is chosen in part 6.4 (no "Claude" or "Anthropic" in it).
+- 2026-10-31 / 0.0: NOTICE copyright line is "Copyright 2026 Mrinanka Dhar", with the project as "secret-shield (working name)" (renamed in 6.4).
+- 2026-10-31 / 0.0: npm, not pnpm. pnpm isn't installed and npm ships with Node.
+- 2026-10-31 / 0.0: `noUncheckedIndexedAccess` is on in `tsconfig.json`. Stricter than planned; no new dependency.
+- 2026-10-31 / 0.0: `step-0` was branched from `develop` (commit f135454), the only local branch.
+- 2026-10-31 / 0.0: GitHub repo created by the owner as `Mrinanka/agent-redact`. The repo name is not yet the product's final name (that's part 6.4; spec still says "secret-shield").
+- 2026-10-31 / 0.0: One-time exception to CLAUDE.md "Never push": the owner told Claude to push `develop` and `step-0` ("you do it man i gave you everything"). The rule itself is unchanged.
+- 2026-10-31 / 0.A: The probe records only fields on an allow-list. Any recorded string that doesn't look like a name or id is written as `(odd)`.
+- 2026-10-31 / 0.A: The probe's tests run under `claude plugin test` on the owner's machine only, because CI has no `claude` installed.
+- 2026-10-31 / 0: Probe bumped to 0.2.0 (opt-in checks added). The owner approved changing the one test that expected `0.1.0`. Also approved earlier: the 0.4 test expects no AES (`subtle:false`), and the 0.3 hold test no longer reads `.result` (test-kit bug).
+- 2026-10-31 / 0: Spec §7.2 no longer writes AWS's example key whole (CLAUDE.md docs rule; the secret scanner flagged it). The owner approved.
+- 2026-10-31 / 0: The probe and the step 0 mock stay in `experiments/` for re-checks when Claude Code updates (D-016 revisit; the owner didn't object).

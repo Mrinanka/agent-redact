@@ -1,133 +1,78 @@
 # Progress
 
-Where the build stands, and what the next session needs to know. Spec: `docs/spec.md`. Plan: `docs/plan.md`.
+Spec: `docs/spec.md`. Plan: `docs/plan.md`. Parked work: spec §23.
 
-## How to work
+**Current focus:** Step 1, Test kit (branch `step-1` from `develop`). Start with `/plan-step`.
 
-**The loop, once per part:**
+## Steps
 
-```
-/progress                 ← where are we? what's next?
-/next-part 2.4            ← Claude plans; you approve; tests first, then code
-/review-part 2.4          ← a fresh subagent tries to break it; you pick the fixes
-/wrap-up 2.4              ← verify, tick, log decisions and lessons, commit
-/clear                    ← fresh context for the next part
-```
+| Step | What | Branch | ✓ |
+|---|---|---|---|
+| 0 | Facts | `step-0` | ☑ |
+| 1 | Test kit | `step-1` | ☐ |
+| 2 | Checker | `step-2` | ☐ |
+| 3 | Core hiding + Audit 1 | `step-3` | ☐ |
+| 4 | Rest of the main lock | `step-4` | ☐ |
+| 5 | Backup lock + tuning | `step-5` | ☐ |
+| 6 | Release + Audit 2 | `step-6` | ☐ |
 
-**Other commands:**
-- `/step0-check 0.2 0.3`: an experiment that confirms how Claude Code behaves (Step 0 only)
-- `/spec-change <what and why>`: the only way the spec or plan changes
-- `/step-retro 2`: at the end of each step, before merging its branch
+"Done when" for each step is in `docs/plan.md`, "The 7 steps".
 
-**Tips:**
-- **One part per session.** Fresh context is faster, cheaper and sharper. If a session gets long, `/wrap-up` what's done, `/clear` and continue.
-- **Read the plan Claude shows you before approving.** It's the cheapest moment to catch a wrong idea.
-- **Your reasons matter.** When Claude asks about a design choice, give your *why* in a sentence. It goes into `decision-log.md`.
-- **Model and effort:** use the strongest model at high effort for Step 0, 2.1, 2.4, 2.5, 3.2, 3.7 and reviews. Mechanical parts (1.8, 6.1) are fine on defaults.
-- **Step 0 is hands-on.** Claude builds probes; you run them (new sessions, VS Code, a VM) and report back.
-- **After part 0.0,** run `/fewer-permission-prompts` so routine test commands stop asking for approval.
-- **Parallel work (optional, later):** independent parts, e.g. 1.5 and 1.7, can run in separate git worktrees. Keep it to one part at a time until the workflow feels natural.
+## Known issues
 
-**The logs:**
+Bugs, unfinished bits and open questions. Features we chose not to build go in spec §23.
 
-| File | Answers |
-|---|---|
-| `docs/progress.md` | Where are we? What does the next session need to know? |
-| `docs/decision-log.md` | What did we decide, and why? |
-| `docs/lessons.md` | What surprised us? What would we do differently? |
-| `docs/findings-step0.md` | What is true about Claude Code, with evidence? |
+- D-005: the owner's reason for `on_check_failure: allow` was never recorded.
+- Probe tests (`claude plugin test`) don't run in CI, because CI has no `claude`.
+- `claude plugin test` (2.1.316): a `turn.step` stream's `.result` resolves `undefined` even when the step beneath answers, contrary to its doc (`HookStream.result`, `claude-code.d.ts:5383`). Probe tests check the hold through its effects instead. Report it upstream.
+- Self-protection (§17) should probably also cover Claude Code's own settings files: a prompt injection could make Claude write `disableAllHooks` into `.claude/settings.local.json` (check 0.14). Decide in step 4.
+- The desktop app's probe log had no `start` line, so its Claude Code version wasn't recorded. Check before release.
+- Not yet proven that `claude -p` makes no network call besides the mock (`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` was set but not checked). Prove it in step 1.
+- The probe's `turn.step` hold has no `.catch`, so it fails open. Fine for a test tool; the product's refusing hooks must have one (R-03).
+- Check 0.6: a `.catch` that spun the CPU for 2 s still had its answer used, although the documented grace is 1 s. Don't rely on the grace either way.
+- Checks 0.4 (macOS `security`, Linux `secret-tool`) and 0.13 can only be run on Windows from the maintainer's machine. They close as "partly (Windows)" in step 0 and are finished in step 1, when `claude` is installed in the 3-OS CI for the leak test kit (D-020).
 
----
+## Gotchas
 
-## Step 0: Setup and facts (branch `step-0`)
+Platform and tooling facts learned so far (from the old `lessons.md`).
 
-| ID | Part | Spec § | Plan | Depends on | Done when | ✓ |
-|---|---|---|---|---|---|---|
-| 0.0 | Repo setup: `package.json` (dev deps pinned, lockfile), `tsconfig`, test runner, folders (`plugin/`, `src/checker/`, `tools/leak-test/`, `tests/`, `experiments/`), `.gitignore`, `LICENSE` (Apache-2.0) + `NOTICE`, CI skeleton, CLAUDE.md commands filled in | 21 | Ground rules | — | An empty test passes locally and in CI; typecheck passes; commands are in CLAUDE.md | ☐ |
-| 0.A | Probe mod that logs each `session.append` row's door, type and size (never content); `findings-step0.md` ready | 5.1 | Step 0 | 0.0 | The probe loads, validates, and logs rows from a real session | ☐ |
-| 0.B | Checks 0.1, 0.5, 0.10: which rows pass `session.append`; can media be dropped; VS Code and desktop | 5.1, 6, 4 | Step 0 | 0.A | Rows recorded in findings with evidence | ☐ |
-| 0.C | Checks 0.2, 0.3: `@` redirect via `prompt.mention` in the user tier; what `/resume` sends and whether a plugin can see it first | 5.3, 6.1 | Step 0 | 0.A | Rows recorded in findings with evidence | ☐ |
-| 0.D | Check 0.4 (R-10): WebCrypto, `$.process`, OS password stores (Windows now; macOS and Linux via CI or later) | 8.1 | Step 0 | 0.0 | Rows recorded per OS tested | ☐ |
-| 0.E | Checks 0.6, 0.9, 0.13: 10 s budget and `.catch`, settings hooks rewriting input/output, Node availability | 12, 5.2 | Step 0 | 0.A | Rows recorded in findings with evidence | ☐ |
-| 0.F | Checks 0.7, 0.8: `allowManagedHooksOnly`, safe mode; Managed simulation in Windows Sandbox or a VM | 5.3, 5.2 | Step 0 | 0.A | Rows recorded; the Managed simulation recipe is written down | ☐ |
-| 0.G | Checks 0.11, 0.12: mock API via `ANTHROPIC_BASE_URL`; lowest working Claude Code version | 20, 4 | Step 0 | 0.0 | Rows recorded in findings with evidence | ☐ |
-| 0.H | Apply all findings with `/spec-change`, then `/step-retro 0` | all | Step 0 | 0.B–0.G | No "pending" rows; spec has no unresolved [Step 0] blocker for Step 1 | ☐ |
-
-## Step 1: Tests first (branch `step-1`)
-
-| ID | Part | Spec § | Plan | Depends on | Done when | ✓ |
-|---|---|---|---|---|---|---|
-| 1.1 | Fake-secret generator: unique, searchable, built from pieces | 21 | 1a.1 | 0.H | Tests prove uniqueness, and that no whole fake exists in the repo | ☐ |
-| 1.2 | Mock model server + recorder (Node built-ins only) | 20 | 1a.2 | 0.H | Claude Code completes a scripted tool-call conversation against it; requests are recorded | ☐ |
-| 1.3 | Scenarios and planting: prompt, paste, Read, `@`, Bash output and errors, MCP, subagent, compaction, `/resume` | 6, 20 | 1a.3–4 | 1.1, 1.2 | Against the empty tool, **every** planted fake is reported leaked | ☐ |
-| 1.4 | `~/.claude` disk report | 22 | 1a.5 | 1.3 | Report lists where fakes appear on disk (reported, not failed) | ☐ |
-| 1.5 | Catch set + code set | 7, R-08 | 1b | 1.1 | Sets exist with labels; the scorer runs and prints catch and false-alarm numbers | ☐ |
-| 1.6 | False-alarm set (public files, licenses recorded) + hidden-set procedure | 2 | 1b | 0.0 | Set downloadable by script; the hidden set is kept out of tuning scripts | ☐ |
-| 1.7 | Speed set + benchmark runner | 18 | 1c | 1.1 | Benchmarks run and print timings for each input | ☐ |
-| 1.8 | CI matrix: macOS, Windows, Linux | 4 | 1 | 1.3, 1.5, 1.7 | All of the above run in CI on all three operating systems | ☐ |
-
-## Step 2: The checker (branch `step-2`)
-
-| ID | Part | Spec § | Plan | Depends on | Done when | ✓ |
-|---|---|---|---|---|---|---|
-| 2.1 | Gitleaks rule converter (pinned version, credited): convert, keywords, max match length, multiline, can't-get-stuck check. May split into 2.1a / 2.1b. | 7, 17, 21 | 2.1 | 1.5 | Every rule compiles, matches its own example and passes the stuck check, or is rejected with a reason | ☐ |
-| 2.2 | Keyword finder (one pass, all keywords) | 18 | 2.2 | 2.1 | Tests plus a speed check on the speed set | ☐ |
-| 2.3 | Pattern runner (only hit patterns, only near hits) | 18 | 2.3 | 2.2 | Same matches as a full scan on the catch set; faster | ☐ |
-| 2.4 | Password labels: grammar and harmless values | 7.1, 7.2, R-08 | 2.4 | 2.3, 1.5 | Catch set label cases hidden; code set fully unhidden | ☐ |
-| 2.5 | Registered-secret store (encrypted, OS key) + Aho-Corasick matcher with encoded forms | 8.1, 18, R-09, R-10 | 2.5 | 2.3, 0.D | Finds secrets raw and encoded; 10 vs 10,000 secrets cost about the same; nothing unencrypted on disk | ☐ |
-| 2.6 | Decoder (looks-encoded only, in pieces, max 3 layers) | 7, 18 | 2.6 | 2.5 | Encoded catch-set cases found; speed set within budget | ☐ |
-| 2.7 | Repeated-line skip (cleared on registration) | 18 | 2.7 | 2.3 | Tests prove the skip and the reset | ☐ |
-| 2.8 | Custom rules + per-rule actions, with the stuck check | 14, R-15 | 2.8 | 2.3 | Bad patterns rejected with clear errors; actions respected | ☐ |
-
-## Step 3: The main lock (branch `step-3`)
-
-| ID | Part | Spec § | Plan | Depends on | Done when | ✓ |
-|---|---|---|---|---|---|---|
-| 3.1 | Plugin skeleton + settings (3 levels, stricter-only, locks, validation) + log | 14, 16, R-14, R-15, R-17 | 3.9, 3.11 | 2.8 | `claude plugin validate` passes; settings tests cover every stricter-only rule; the log never holds a secret | ☐ |
-| 3.2 | Hiding at `session.append` + `prompt.submit`; `.catch` failure handling; "I'm running" marker | 5.1, 12, R-02, R-03, R-04, R-12 | 3.1, 3.6, 3.8 | 3.1 | Leak test: prompt, Read, Bash, errors, MCP, subagent and compaction all clean | ☐ |
-| 3.3 | Placeholders, tag map shared with subagents, stable instructions note | 9 | 3.2 | 3.2 | Same secret → same tag; different → different; the note never changes within a thread | ☐ |
-| 3.4 | `@` files via `prompt.mention` | 5.3 | 3.1 | 3.3 (needs 0.C) | Leak test: `@` files clean in Personal mode | ☐ |
-| 3.5 | Outbound check + `/redact allow` (`block` / `ask` / `warn` / `off`) | 11 | 3.4 | 3.3 | Each setting tested; an allowed tag passes; locks respected | ☐ |
-| 3.6 | Overwrite guard + placeholder-in-file notice | 10, R-11 | 3.3 | 3.3 | A whole-file rewrite that would lose a real secret is blocked; a normal edit passes | ☐ |
-| 3.7 | Resume scan + mid-session registration warning | 6.1, 6.2, R-06, R-07 | 3.7 | 3.3 (needs 0.C) | Leak test: `/resume` scenario blocked; the warning shows the right count | ☐ |
-| 3.8 | Media `pass` / `drop` + observe mode with banner | 6, 13, R-13 | 3.6, 3.9 | 3.2 (needs 0.B) | Media scenarios behave per setting; a project can't turn on observe | ☐ |
-| 3.9 | Self-protection (deny edits to its own files) | 17 | 3.7 | 3.1 | Injection scenarios that try to edit settings, secrets or the plugin are denied | ☐ |
-| 3.10 | `/redact`, `/redact add`, `/redact learn`; Claude can't run them | 8, 15, R-09, R-16 | 3.10, 3.13 | 3.3, 2.5 | Commands work; the model can't invoke them; storage tests pass | ☐ |
-| 3.11 | `/redact self-check [--report]`, `/redact doctor`, version warning | 15, 4, R-01, R-05 | 3.13, 3.15 | 3.10 | `doctor` reports each failure case it should (simulated); the report has no secrets | ☐ |
-
-## Step 4: The backup lock (branch `step-4`)
-
-| ID | Part | Spec § | Plan | Depends on | Done when | ✓ |
-|---|---|---|---|---|---|---|
-| 4.1 | Settings hooks using the same checker; act only without the marker | 5.2, R-04 | 4.1–4.4 | 3.11 (needs 0.8, 0.9) | Unit tests; does nothing while the main lock runs | ☐ |
-| 4.2 | Install snippets (Personal and Managed) + safe-mode leak test | 5.2, 19 | 4.5 | 4.1 | Leak test passes in safe mode within the backup lock's limits | ☐ |
-
-## Step 5: Pilot (branch `step-5`)
-
-| ID | Part | Spec § | Plan | Depends on | Done when | ✓ |
-|---|---|---|---|---|---|---|
-| 5.1 | Pilot tuning session (repeat as needed): review false alarms from the log and issues, tune rules and harmless values on the catch, code and false-alarm sets | 7 | 5.1–5.3 | 4.2 | False alarms at or below the published target; hidden set scored once | ☐ |
-| 5.2 | "Looks random" check evaluation | 7.3 | 5.4 | 5.1 | Numbers recorded; decision logged (ship or not) | ☐ |
-
-## Step 6: Open-source release (branch `step-6`)
-
-| ID | Part | Spec § | Plan | Depends on | Done when | ✓ |
-|---|---|---|---|---|---|---|
-| 6.1 | `THIRD_PARTY_LICENSES`, `SECURITY.md`, `CONTRIBUTING.md` (DCO), `CODE_OF_CONDUCT.md`, issue templates | 21 | 6.1 | 0.0 | Files present; bug template asks for `doctor` output | ☐ |
-| 6.2 | `.claude-plugin/marketplace.json` + install test on a clean machine or VM | 19 | 6.2 | 4.2 | Install from GitHub works on a machine that never had it | ☐ |
-| 6.3 | README + `docs/personal.md`, `docs/managed.md`, `docs/verify.md`, `docs/troubleshooting.md` | 19, 20 | 6.3 | 6.2 | Someone new can install and verify by following the README alone | ☐ |
-| 6.4 | Final name, compatibility matrix, scores, signed tag, checksums, changelog | 19, 20 | 6.4–6.6 | 5.1, 6.3 | Every release rule in plan.md met | ☐ |
-
----
-
-## Step summaries
-
-*(Written by `/step-retro` at the end of each step.)*
+- Rows loaded by `/resume` don't pass through `session.append`, so a resumed session can resend raw secrets (spec §6.1, check 0.3).
+- A mod can't change messages already sent. Registering a secret mid-session can't un-send it, so warn and suggest rotating (§6.2).
+- Hooks fail **open**: a throw, a wrong shape or going over 10 s means the hook is skipped. Refusing hooks need `.catch` (1 s grace) to fail closed (R-03).
+- Under `allowManagedHooksOnly`, a project's `disableAllHooks`, `--safe-mode`, `--bare` or `CLAUDE_CODE_SIMPLE=1`, a user-tier plugin loads no hooks and user settings hooks don't run. A plain markdown command still loads (checks 0.7, 0.8, 0.14).
+- The mod runtime has no Node or DOM; everything goes through `$`. A mod and its imports must sit inside the plugin folder, so `src/checker/` gets copied or bundled into `plugin/` (step 3).
+- Git for Windows sets `core.autocrlf=true`; `.gitattributes` forces LF. Test CRLF on purpose with fixtures built in the test. Count line endings with Node or `git ls-files --eol`, not `grep`.
+- `claude plugin test`: a test's own `session.append` hook that answers without `next` gets skipped, so record rows with `mock.session(on)`. A hook for a `$` call that throws makes the plugin's call reject, which is how to simulate a failing write.
+- `claude -p`: put the prompt before `--allowedTools`, which takes several values and swallows what follows.
+- `$.fs.write` replaces the whole file.
+- A mod may pass `$` only to functions declared or imported at the top of a file (not to one passed in as a parameter), and may register each event only once without a matcher. Both are load errors, which `claude plugin validate` and the tests show; type errors only show with `tsc` and the tsconfig from the types file header.
+- The plugin runtime's `crypto.subtle` has `digest` only: no AES (check 0.4).
+- Hook time: waits on `$`/`next` don't count; `$.clock.sleep` does; CPU-bound code is cut off at about 6 s (check 0.6).
+- Test runs against a mock: use `ANTHROPIC_BASE_URL`, a dummy `ANTHROPIC_API_KEY` and a separate `CLAUDE_CONFIG_DIR`, never `--bare` (it loads no plugin hooks). Without a separate config dir, runs leave records in your real `~/.claude`.
+- JavaScript `String.replace` treats `$&`, `` $` `` and `$'` in the replacement as patterns. When a replacement holds Markdown with `$`, pass a function: `t.replace(from, () => to)`.
+- The VS Code extension runs its own Claude Code version (2.1.314 next to CLI 2.1.316).
+- When Claude Code loads a mod (VS Code, desktop app, an interactive session), it writes `tsconfig.json` and `.claude-plugin/types/` into the mod folder. Delete them after a test run; the types folder is gitignored, the `tsconfig.json` is not.
+- When a skill asks for plan approval, the answers to design questions are not approval. Ask for approval explicitly.
 
 ## Session notes
 
-*(Newest last. Written by `/wrap-up`: what exists now, gotchas, anything deferred.)*
+Newest last, 3–5 lines each: what exists now and what the next session needs.
 
-### 2026-10-31: workflow setup
-- Spec and plan moved to `docs/`. Slash commands added in `.claude/skills/`. Logs created: `decision-log.md`, `lessons.md`, `findings-step0.md`.
-- No code yet. Next: `/next-part 0.0` on branch `step-0`.
+### 2026-10-31: setup and part 0.0
+- npm + `package-lock.json` (dev deps only: `typescript@7.0.2`, `@types/node@24.19.2`); `node:test` runs `.ts` directly on Node 24 (`.nvmrc`); `tsc -p .` typechecks only (`erasableSyntaxOnly`: no enums or namespaces). `LICENSE`, `NOTICE`, `.gitattributes`, 3-OS CI with SHA-pinned actions, guard tests in `tests/repo-setup.test.ts`.
+- Remote: `origin` = https://github.com/Mrinanka/agent-redact.git; `develop` is the default branch. CI run 41203340159 green on all 3 OSes.
+- The root tsconfig excludes `plugin/` and `experiments/`. Relative imports in tests use the `.ts` extension.
+
+### 2026-10-31: part 0.A (probe)
+- `experiments/step0-probe/` writes one JSON line per `session.append` row (metadata only) to `<cwd>/.step0-probe/<session id>.jsonl` (D-016, D-017). 10 tests under `claude plugin test`, including a planted fake that must appear in no write.
+- Verified on 2.1.316, Windows, `claude -p` only: 17 rows over 5 doors.
+
+### 2026-10-31: workflow slimmed
+- 44 parts became 7 steps; 7 commands became 3 (`/plan-step`, `/verify`, `/ship`); 2 audits (D-018). Scope cuts parked in spec §23 (D-019). `lessons.md` folded into "Gotchas" above.
+
+### 2026-10-31: step 0 checks
+- `experiments/step0-mock/`: local mock API (`server.ts`), driver (`run.ts`, scenarios in `scenarios.ts`), hand-run helper (`manual.ts`). `experiments/step0-settings-hooks/hook.mjs`: settings hook for 0.8/0.9/0.13/0.14. The probe gained opt-in checks (`on-<name>` markers) and a markdown command.
+- All checks 0.1–0.14 recorded in findings (0.4 and 0.13 partly, Windows only). Spec updated (D-022); secret store now uses the OS password store (D-023, supersedes D-004).
+- Mods: `$` may only be passed to functions declared or imported at the top of a file, and each event may be registered once without a matcher. Type-check mods with the tsconfig from the types file header; `claude plugin validate` doesn't catch type errors.
+- Owner ran the interactive terminal, VS Code, desktop app and managed-mode checks by hand; all test leftovers outside the repo were deleted afterwards.
+- Next session needs: step 1 (test kit). Reuse `experiments/step0-mock/server.ts` as the start of `tools/leak-test/`; install `claude` in CI to finish 0.4 and 0.13 on macOS and Linux.

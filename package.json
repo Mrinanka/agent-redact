@@ -1,0 +1,19 @@
+{
+  "name": "secret-shield",
+  "version": "0.0.0",
+  "description": "Hides secrets before the model sees them in Claude Code (working name).",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test \"tests/**/*.test.ts\"",
+    "typecheck": "tsc -p ."
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "7.0.2"
+  }
+}
