@@ -1,0 +1,8 @@
+{
+  "name": "secret-shield",
+  "version": "0.1.0",
+  "description": "Hides secrets before the model sees them in Claude Code (working name).",
+  "author": { "name": "Mrinanka Dhar" },
+  "license": "Apache-2.0",
+  "types": "./types/index.d.ts"
+}

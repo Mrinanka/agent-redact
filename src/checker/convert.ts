@@ -186,3 +186,27 @@ export function convertCustom(input: CustomRuleInput): Converted {
   }
   return { rule: { ...result.rule, label: input.label, keywords: [keyword] }, warnings: result.warnings }
 }
+
+/**
+ * An `allow` pattern from settings (spec §14). It is tried against a hidden value only, never
+ * over open text, but a regex call can't be interrupted, so it gets the same cost limit as a
+ * custom rule. It needs no keyword. Returns the JS form to run, or the reason it was refused.
+ */
+export function convertAllowPattern(pattern: string): { source: string; flags: '' | 'i' } | { reason: string } {
+  let tree
+  try {
+    tree = parse(pattern)
+  } catch (e) {
+    return { reason: `unsupported syntax: ${e instanceof RegexError ? e.message : 'unreadable'}` }
+  }
+  const a = analyze(tree.node, CUSTOM_CAP)
+  if (a.nestedVariable) return { reason: 'a repeat with a range of counts around a variable-length part' }
+  if (a.cost > COST_REJECT_CUSTOM) return { reason: `worst-case work per start position is too high (${a.cost >= 1e12 ? 'over 1e12' : a.cost})` }
+  const e = emit(tree.node, { cap: CUSTOM_CAP })
+  try {
+    new RegExp(e.source, e.flags)
+  } catch {
+    return { reason: 'the regex engine refused the converted pattern' }
+  }
+  return { source: e.source, flags: e.flags }
+}

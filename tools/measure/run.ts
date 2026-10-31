@@ -4,12 +4,15 @@
 //   3. the code set (R-08)
 //   4. false alarms per MB, by rule
 //   5. speed per item, under Node
+//   6. the same through the whole pipeline: matcher, checker and decoder (step 3)
 // Exits 1 if an automated "done when" fails, so CI notices. Prints labels and
 // counts only, never a value.
 
 import path from 'node:path'
 import fs from 'node:fs'
 import { createChecker } from '../../src/checker/index.ts'
+import { NO_ALLOW, Redactor } from '../../src/core/session.ts'
+import type { SecretEntry } from '../../src/core/store.ts'
 import { REJECTIONS, RULES, BUILD_WARNINGS, GITLEAKS_VERSION } from '../../src/checker/rules.generated.ts'
 import { catchSet, type CatchCase } from '../test-sets/catch.ts'
 import { codeSet } from '../test-sets/code.ts'
@@ -140,6 +143,60 @@ for (const item of speedSet()) {
   const note = textOnly.has(item.id) ? '  (timed as plain text; the registered-secret and decoder work is step 3)' : ''
   console.log(`  ${item.id.padEnd(38)} ${(text.length / 1024).toFixed(0).padStart(6)} KB  first ${ms(first).padStart(10)}  repeat ${ms(again).padStart(10)}  hidden ${r.findings.length}  complete ${r.complete}${note}`)
   if (!r.complete) fail(`${item.id} ran out of budget`)
+}
+
+// ---- 6. the whole pipeline ------------------------------------------------------------------
+
+console.log('\n== 6. The whole pipeline (matcher, checker, decoder) ==')
+const BUDGET_MS = 4000
+const redactor = (registered: SecretEntry[] = []): Redactor => new Redactor({ checker: createChecker({}).checker, registered, hints: true, allow: NO_ALLOW })
+const deadline = (ms = 60_000): number => performance.now() + ms
+
+// A bare value in base64 has no shape and no label, so nothing can catch it (spec §22, D-046).
+const SHAPELESS = new Set(['jfrog/base64', 'connection-string/base64', 'labelled-password/base64'])
+const cases = catchSet()
+const missedAll = cases.filter(c => {
+  const s = c.secrets[0]
+  return s === undefined || redactor().redactText(c.text, { deadline: deadline() }).text.includes(s.shown)
+})
+console.log(`catch set: ${cases.length - missedAll.length}/${cases.length} ${pct(cases.length - missedAll.length, cases.length)}`)
+if (missedAll.length > 0) console.log(`not caught: ${missedAll.map(c => c.id).join(', ')}`)
+for (const c of missedAll) if (!SHAPELESS.has(c.id)) fail(`${c.id} was not caught`)
+
+let codeLeft = 0
+for (const c of cs) if (redactor().redactText(c.text, { deadline: deadline() }).hits.length === 0) codeLeft++
+console.log(`code set: left alone ${codeLeft}/${cs.length}`)
+if (codeLeft !== cs.length) fail('the pipeline hid harmless code')
+
+for (const withFile of [true, false]) {
+  let bytes = 0
+  let hidden = 0
+  for (const f of files) {
+    const text = fs.readFileSync(f.file, 'utf8')
+    bytes += Buffer.byteLength(text)
+    hidden += redactor().redactText(text, { deadline: deadline(), ...(withFile ? { file: f.name } : {}) }).hits.length
+  }
+  const mb = bytes / (1024 * 1024)
+  console.log(`false alarms ${withFile ? 'with the file name' : 'with no file name'}: ${hidden} hidden (${(hidden / mb).toFixed(2)} per MB)`)
+}
+
+const speedItems: { id: string; text: () => string; registered?: string[] }[] = [
+  ...speedSet(),
+  // Found by /verify: these were quadratic, outside the deadline.
+  { id: 'adversarial-placeholder-starts', text: () => '[REDACTED:'.repeat(400_000) },
+]
+console.log(`speed, one call, limit ${BUDGET_MS} ms:`)
+for (const item of speedItems) {
+  const built = performance.now()
+  const r = redactor((item.registered ?? []).map(value => ({ value, label: 'SPEED', added: '2026-11-01' })))
+  const buildMs = performance.now() - built
+  const text = item.text()
+  const t0 = performance.now()
+  const out = r.redactText(text, { deadline: performance.now() + BUDGET_MS })
+  const took = performance.now() - t0
+  console.log(`  ${item.id.padEnd(38)} ${(text.length / 1024).toFixed(0).padStart(6)} KB  ${ms(took).padStart(11)}  hits ${String(out.hits.length).padStart(6)}  complete ${out.complete}${item.registered ? `  (built in ${ms(buildMs)})` : ''}`)
+  if (took > BUDGET_MS + 1000) fail(`${item.id} ran past its deadline`)
+  if (!out.complete) fail(`${item.id} did not finish`)
 }
 
 console.log(failed ? '\nmeasure: FAILED' : '\nmeasure: ok')
