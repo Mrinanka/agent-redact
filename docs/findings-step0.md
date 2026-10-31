@@ -1,6 +1,6 @@
 # Step 0 findings
 
-What is actually true about Claude Code, with evidence. Filled in by `/step0-check`. The spec relies only on rows marked **yes** (or **partly**, within the stated limits).
+What is actually true about Claude Code, with evidence. Filled in during step 0 (`/plan-step`). The spec relies only on rows marked **yes** (or **partly**, within the stated limits).
 
 **Rules:**
 - **Result:** `yes` / `no` / `partly` / `pending`.
@@ -21,12 +21,12 @@ What is actually true about Claude Code, with evidence. Filled in by `/step0-che
 | 0.9 | Can settings hooks change a tool's input (`PreToolUse`)? Can they rewrite a built-in tool's output (`PostToolUse`)? | pending | | | | | | |
 | 0.10 | Does the plugin hide content in the VS Code panel and the desktop Code tab? | pending | | | | | | |
 | 0.11 | Does Claude Code run against a local mock API via `ANTHROPIC_BASE_URL`? What env and auth does it need? | pending | | | | | | |
-| 0.12 | What is the lowest Claude Code version where all of the above work? | pending | | | | | | |
+| 0.12 | What is the lowest Claude Code version where all of the above work? | parked (spec §23, D-019) | | | | | | |
 | 0.13 | Is Node available where the backup lock runs? | pending | | | | | | |
 
 ## Managed-mode simulation recipe
 
-*(Filled in during part 0.F: exact managed-settings file location and contents used, VM or Windows Sandbox setup, and what was observed.)*
+*(Filled in during step 0: exact managed-settings file location and contents used, VM or Windows Sandbox setup, and what was observed.)*
 
 ## The probe (part 0.A)
 

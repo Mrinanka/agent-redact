@@ -54,9 +54,9 @@ When a developer types a message, or Claude reads a file or command output, the 
 | | v1 |
 |---|---|
 | **Surfaces** | The Claude Code terminal, the VS Code extension and the Code tab of the desktop app. Scripted runs (`claude -p`) too. |
-| **Not covered** | claude.ai chat. Claude Code on the web and Agent SDK hosts, unless listed as tested in the compatibility matrix. |
+| **Not covered** | claude.ai chat. Claude Code on the web and Agent SDK hosts, unless listed in the tested-versions list. |
 | **Systems** | macOS, Windows and Linux, all first-class. That includes WSL and devcontainers. CI runs on all three. |
-| **Claude Code versions** | A **tested versions** list is published with each release (section 20). The lowest supported version is the lowest one that passes the full test suite. **[Step 0]** Earlier figures (2.1.287 for mods, 2.1.295 for "block if this check fails") have not been confirmed. Development so far has been checked against 2.1.316. |
+| **Claude Code versions** | A **tested versions** list is published with each release (section 20). v1 supports the Claude Code version pinned for testing (and newer, with the R-01 warning). Hunting for the lowest working version is parked (section 23, D-019). **[Step 0]** Earlier figures (2.1.287 for mods, 2.1.295 for "block if this check fails") have not been confirmed. Development so far has been checked against 2.1.316. |
 
 - **R-01** At session start, the tool **must** show a one-line warning when the Claude Code version is not on its tested list, and keep working.
 
@@ -168,9 +168,9 @@ A label match needs all of these:
 
 - **R-08** Each harmless rule **must** have a test showing it is left alone, and a matching test showing that a real-looking value in the same spot is hidden.
 
-### 7.3 Unknown random secrets (later in v1)
+### 7.3 Unknown random secrets (parked)
 
-We'll test an entropy-style "looks random" check against the test sets. It ships only if it catches more without many more false alarms. Any outside code used for this must be credited (section 21).
+Not in v1. Parked in section 23 (D-019).
 
 ## 8. Registering your own secrets
 
@@ -372,7 +372,7 @@ The maintainers can't test inside every organization. So everything needed to te
 | **`/redact self-check`** | Built-in cases run in seconds and show pass or fail. `--report` saves a shareable result. |
 | **`/redact doctor`** | Environment check (section 15). |
 | **Leak test kit** (`tools/leak-test/`) | A small local server that pretends to be the model API. It plays a scripted conversation that makes Claude Code read files, run commands, use `@` files, compact, and run subagents, all containing planted fake secrets. Claude Code is pointed at it with `ANTHROPIC_BASE_URL`. The server records every request Claude Code sends, then searches the recording for the fakes. Any hit is a failure. It uses Node built-ins only. |
-| **Compatibility matrix** | Published per release: Claude Code versions × OS × surface, with leak-test results. |
+| **Tested-versions list** | Published per release: the pinned Claude Code version, leak test run in CI on macOS, Windows and Linux, plus a one-off manual check of the VS Code panel and the desktop Code tab. |
 | **Published scores** | Catch rate and false-alarm rate on the public test sets, per release. |
 
 **Suggested trial for an organization**
@@ -409,7 +409,20 @@ The maintainers can't test inside every organization. So everything needed to te
 - **Observe mode** hides nothing, by design.
 - **Determined attacks.** The tool stops accidental leaks. It doesn't stop a person who deliberately splits up or scrambles a secret.
 
-## 23. v2 candidates
+## 23. Later (parked)
+
+The single list of everything not being built now. Anything deferred during a build step is added here (features) or to `docs/progress.md` "Known issues" (bugs, unfinished bits), never only in session notes.
+
+**Parked from v1** (what · why · decision):
+
+- Hidden test set, scored once per release · too much effort for v1; the catch, code and false-alarm sets are enough to start · D-019
+- Large downloaded false-alarm corpus · the `.ts` files in `node_modules/typescript` and `node_modules/@types/node` are a known-license set with no download · D-019
+- Full compatibility matrix (versions × OS × surface) · one pinned version on 3 OSes is enough for v1 · D-019
+- Lowest-working-version hunt (old Step 0 check 0.12) · same reason · D-019
+- Signed release tags · needs signing-key setup; SHA-256 checksums cover integrity · D-019
+- "Looks random" check (entropy-style, old §7.3) · was already "later in v1"; ship only if it catches more without many more false alarms; credit any outside code (§21) · D-019
+
+**v2 candidates:**
 
 - Read inside images and documents.
 - Optional "put secrets back" setting, limited to the original file and `.env` files.

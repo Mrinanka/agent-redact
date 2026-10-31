@@ -32,7 +32,7 @@ Tiny clarifications go under **Minor** at the bottom.
 | D-004 | Store registered secrets encrypted, not as fingerprints | **proposed** | setup | 8.1 |
 | D-005 | Default `on_check_failure: allow` | accepted | setup | 12 |
 | D-006 | No putting secrets back into files in v1 | accepted | setup | 10 |
-| D-007 | Build workflow: slash commands, one part per session, commit at wrap-up, docs in `docs/` | accepted | setup | — |
+| D-007 | Build workflow: slash commands, one part per session, commit at wrap-up, docs in `docs/` | superseded by D-018 | setup | — |
 | D-008 | Credit only code actually copied | accepted | setup | 21 |
 | D-009 | Every question comes with a researched, evidence-backed recommendation | accepted | setup | — |
 | D-010 | Test runner: `node:test` with native type stripping; `tsc` only typechecks | accepted | 0.0 | 21 |
@@ -40,24 +40,21 @@ Tiny clarifications go under **Minor** at the bottom.
 | D-012 | Node 24 LTS for development and CI | accepted | 0.0 | 4 |
 | D-013 | LF line endings on every OS (`.gitattributes`) | accepted | 0.0 | 4, 7, 18 |
 | D-014 | Rejected review finding: test that `.nvmrc` matches `engines` | accepted | 0.0 | — |
-| D-015 | End-of-step PRs: Claude opens the PR, the owner merges | accepted | 0.0 | — |
+| D-015 | End-of-step PRs: Claude opens the PR, the owner merges | superseded by D-018 | 0.0 | — |
 | D-016 | Step 0 probe lives in `experiments/step0-probe/`, loaded with `--plugin-dir` | accepted | 0.A | 5.1 |
 | D-017 | Probe log: `<cwd>/.step0-probe/<session id>.jsonl`, metadata only | accepted | 0.A | 5.1 |
+| D-018 | Slim workflow: 7 steps, 3 commands, 2 audits | accepted | step 0 | — |
+| D-019 | Scope cuts: test sets and release extras parked | accepted | step 0 | 4, 7.3, 20, 23 |
 
-## Entry template
+## Entry template (short form, from D-018 on)
 
 ```
 ## D-0xx: <title>
-- Date / Part: YYYY-MM-DD / <part id>        Status: proposed | accepted | superseded by D-0xx
-- Context: why a decision was needed
-- Options considered: A … / B … / C …
+- Date / Step: YYYY-MM-DD / <n>        Status: proposed | accepted | superseded by D-0xx
 - Decision: what we chose
-- Why: the deciding reasons, in the owner's words where they gave them
-- Evidence: the sources the recommendation rested on (file:line, docs URL + section,
-            test or benchmark output, findings-step0 rows, D-ids)
-- Trade-offs: what we give up, what it affects
-- Revisit when: the signal that should make us reconsider
-- Links: spec §, R-ids, files, commits
+- Why: the deciding reason, in the owner's words where they gave them
+- Rejected: the main alternative(s), and why not
+- Evidence: what backed it (file:line, docs URL, test output, findings row, D-id)
 ```
 
 ---
@@ -126,7 +123,7 @@ Tiny clarifications go under **Minor** at the bottom.
 - Links: spec §10, §23; R-11.
 
 ## D-007: Build workflow
-- Date / Part: 2026-10-31 / setup. Status: accepted
+- Date / Part: 2026-10-31 / setup. Status: superseded by D-018
 - Context: The tool is built with Claude Code across many sessions, so progress and reasoning must survive between them.
 - Options considered: Slash commands / a copy-paste prompt file / both. Claude commits at wrap-up / the owner commits. Docs in the root / in `docs/`.
 - Decision:
@@ -216,7 +213,7 @@ Tiny clarifications go under **Minor** at the bottom.
 - Links: `.npmrc`, `.nvmrc`, `package.json`.
 
 ## D-015: End-of-step PRs: Claude opens the PR, the owner merges
-- Date / Part: 2026-10-31 / 0.0. Status: accepted (recorded at the 0.A wrap-up)
+- Date / Part: 2026-10-31 / 0.0. Status: superseded by D-018 (the PR now comes from `/ship` at the end of each step; the owner still merges)
 - Context: No rule said who opens and who merges the end-of-step PR into `develop`.
 - Options considered: Claude opens the PR at the end of `/step-retro` and the owner merges / the owner does both / Claude merges / a draft PR from the start of the step.
 - Decision: At the end of `/step-retro`, Claude pushes the step branch (no force), runs `gh pr create` into `develop`, and waits for CI. The owner reviews and merges; Claude never merges.
@@ -247,6 +244,33 @@ Tiny clarifications go under **Minor** at the bottom.
 - Trade-offs: The log lands in whatever folder you test in, so use a scratch folder. Rewriting the whole file on every row costs O(n²), which is fine for a probe.
 - Revisit when: A log grows past 4 MiB (it then can't be read back, so the probe starts a new file), or the engine adds an append call.
 - Links: spec §5.1, §16; `experiments/step0-probe/hooks/register.ts`, `summarize.ts`; `.gitignore`.
+
+## D-018: Slim workflow: 7 steps, 3 commands, 2 audits
+- Date / Step: 2026-10-31 / 0. Status: accepted. Supersedes D-007 and D-015.
+- Decision:
+  - The 44 parts are merged into 7 steps, one session each.
+  - The 7 project commands are replaced by `/plan-step`, `/verify` and `/ship` (based on the owner's prompts from another project).
+  - `/ship` commits, pushes the step branch and opens a PR into `develop`; the owner merges.
+  - Per-part reviews, retros and `lessons.md` are dropped. Instead there are two audits (`/security-review` + `/code-review high`), after step 3 and before release.
+  - Decision entries use a short form.
+  - The question rule (D-009) stays, in compact form.
+- Why: The owner: "we just made your software building impossible". The ceremony costs tokens and time without adding quality. Tests-first, the leak test and a few real audits are what protect quality.
+- Rejected:
+  - Keeping 44 parts with lighter ceremony (still 44 sessions).
+  - 18 merged sessions (the owner judged it still too many).
+- Evidence: the old `docs/progress.md` had 44 parts × 4 commands each (~175 runs). Part 0.0 alone produced D-010 to D-015 before any product code.
+
+## D-019: Scope cuts: test sets and release extras parked
+- Date / Step: 2026-10-31 / 0. Status: accepted
+- Decision: Park the following in spec §23:
+  - the hidden test set
+  - the downloaded false-alarm corpus (replaced by the `.ts` files in `node_modules/typescript` and `node_modules/@types/node`)
+  - the full compatibility matrix and the lowest-version hunt (check 0.12); v1 tests one pinned version on 3 OSes
+  - signed tags (checksums only)
+  - the "looks random" check (old §7.3)
+- Why: The owner chose these cuts to save work without touching protection.
+- Rejected: Also parking the backup lock, and Managed mode with observe mode. The owner kept both, so D-002 and D-003 stand.
+- Evidence: Spec §5.2 and §13 (what the kept features cover); plan Step 1b and the release rules (where the cut items were required).
 
 ---
 

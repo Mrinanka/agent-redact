@@ -5,40 +5,20 @@ Spec: @docs/spec.md. Plan: @docs/plan.md. Progress: docs/progress.md.
 
 ## Workflow
 
-- One session = one part from `docs/progress.md`, started with `/next-part <id>`. Never start another part, even if this one finishes early.
-- Before anything else, read the part's row in `docs/progress.md` and the latest session notes.
-- Plan first and wait for approval. Then write tests first, then the code.
-- Never edit `docs/spec.md` or `docs/plan.md` directly. Propose the change; it is applied only through `/spec-change`.
-- Never make a significant design choice silently. Show the options with a recommendation and let the user decide. Mark the result **DECISION** so `/wrap-up` records it in `docs/decision-log.md`.
-- Mark surprises, mistakes and platform quirks as **LESSON** so `/wrap-up` records them in `docs/lessons.md`.
-- Before designing something, search `docs/decision-log.md` for an existing decision on it. Don't reopen an accepted decision without saying so.
-- Items marked [Step 0] in the spec are unconfirmed. Don't build on them until `docs/findings-step0.md` confirms them.
-- The commands: `/progress`, `/next-part`, `/review-part`, `/wrap-up`, `/step-retro`, `/step0-check`, `/spec-change`.
+- 7 steps (`docs/plan.md`, "The 7 steps"); one step per session.
+- Loop: `/plan-step` (in plan mode) → I approve → tests first, then code → `/verify` → fix → `/ship` → `/clear`.
+- Steps 3 and 6 end with an audit: `/security-review` and `/code-review high` before `/ship`.
+- If a step spans sessions, commit a `step <n> (wip): ...` checkpoint when I ask; no PR until `/ship`.
+- Spec and plan: propose a change, edit only after I say yes, and log it as a decision.
+- Parked features go to spec §23; bugs and unfinished bits go to progress "Known issues". Nothing deferred lives only in session notes.
+- [Step 0] items in the spec are unconfirmed. Don't build on them until `docs/findings-step0.md` confirms them.
 
-## Questions and recommendations
+## Questions
 
-Every question to the user, whether while planning, implementing, reviewing or wrapping up, comes with a **researched, evidence-backed recommendation**. Never a bare question, never a guess.
-
-1. **Research before asking.** Don't ask what you can find out yourself. In this order:
-   1. `docs/spec.md`, `docs/decision-log.md`, `docs/findings-step0.md`, `docs/lessons.md`
-   2. the code and tests in this repo
-   3. the Claude Code mod API types (the file the `plugin-authoring` skill names; grep for the event or noun)
-   4. official docs (Claude Code docs, Node.js docs, RFCs, the pinned Gitleaks source)
-   5. a quick experiment or measurement in a scratch file
-2. **Use this format for each question.** Use the AskUserQuestion tool, with the recommended option first and labelled "(Recommended)"; put the evidence in the option descriptions or just before the question.
-
-   ```
-   Question:        one line, and why it matters now
-   Options:         2–4, each with its main pro and con
-   Recommendation:  one option, and the deciding reason
-   Evidence:        what backs it, e.g. file:line, spec §/R-id, D-id, findings row,
-                    test or benchmark output, docs URL + section
-   Confidence:      high / medium / low, and what would change the recommendation
-   ```
-3. **Every recommendation cites at least one source you actually read or ran in this session.** Never invent sources, URLs, numbers or quotes. Something recalled from memory is labelled "(from memory, unverified)" and is never the only support for a recommendation.
-4. **If the evidence is weak or missing, say so plainly.** Propose the cheapest way to get it (a probe, a benchmark, a docs check) before deciding.
-5. **Questions about naming or taste** can be shorter, but still carry a recommendation and its reason.
-6. The evidence is copied into the decision-log entry's **Evidence** line when `/wrap-up` records the decision.
+- Research first (docs/, code, the mod API types named by the `plugin-authoring` skill, official docs, a quick scratch experiment). Don't ask what you can find out.
+- Ask with AskUserQuestion, recommended option first and labelled "(Recommended)". Give each option's main pro and con.
+- Back the recommendation with at least one source actually read or run this session (`file:line`, spec §/R-id, D-id, findings row, docs URL, test output). Never invent sources or numbers. Label anything from memory "(unverified)". If evidence is weak, say so and propose the cheapest way to get it.
+- Don't reopen an accepted decision in `docs/decision-log.md` without saying so.
 
 ## Rules
 
@@ -53,9 +33,9 @@ Every question to the user, whether while planning, implementing, reviewing or w
 
 ## Git
 
-- One branch per plan step: `step-0`, `step-1`, ...
-- Commit only in `/wrap-up` (`part <id>: ...`), `/spec-change` (`spec: ...`) or `/step-retro` (`retro: step <n>`).
-- Never push, force-push, amend published commits or rewrite history. One exception: `/step-retro` pushes the step branch (no force) and opens its PR into `develop`. The owner reviews and merges; Claude never merges.
+- One branch per step: `step-0` … `step-6`, from `develop`.
+- Commit only in `/ship` (or a wip checkpoint I ask for). `/ship` pushes the step branch (no force) and opens a PR into `develop`. I review and merge; Claude never merges.
+- Never force-push, amend published commits or rewrite history.
 
 ## Fake secrets in tests
 
@@ -71,4 +51,4 @@ Every question to the user, whether while planning, implementing, reviewing or w
 - Check the plugin: `claude plugin validate ./plugin`
 - Plugin tests: `claude plugin test ./plugin`
 - Step 0 probe: `claude plugin test ./experiments/step0-probe`; run it with `claude --plugin-dir "<repo>/experiments/step0-probe"` from a scratch folder (log: `<cwd>/.step0-probe/`)
-- Leak test kit: (filled in by part 1.2)
+- Leak test kit: (filled in by step 1)
