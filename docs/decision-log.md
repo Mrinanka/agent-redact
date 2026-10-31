@@ -221,3 +221,5 @@ Tiny clarifications go under **Minor** at the bottom.
 - 2026-10-31 / 0.0: npm, not pnpm. pnpm isn't installed and npm ships with Node.
 - 2026-10-31 / 0.0: `noUncheckedIndexedAccess` is on in `tsconfig.json`. Stricter than planned; no new dependency.
 - 2026-10-31 / 0.0: `step-0` was branched from `develop` (commit f135454), the only local branch.
+- 2026-10-31 / 0.0: GitHub repo created by the owner as `Mrinanka/agent-redact`. The repo name is not yet the product's final name (that's part 6.4; spec still says "secret-shield").
+- 2026-10-31 / 0.0: One-time exception to CLAUDE.md "Never push": the owner told Claude to push `develop` and `step-0` ("you do it man i gave you everything"). The rule itself is unchanged.
