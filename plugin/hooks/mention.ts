@@ -13,7 +13,7 @@ const BUDGET_MS = 4000
 const MAX_BYTES = 8 * 1024 * 1024
 const MEDIA = /\.(?:png|jpe?g|gif|webp|bmp|tiff?|ico|pdf)$/i
 
-export type MentionAnswer = { path: string } | { deny: string } | 'as-is'
+export type MentionAnswer = { path: string; text: string } | { deny: string } | 'as-is'
 
 const copies: string[] = []
 
@@ -46,7 +46,7 @@ export async function checkMention($: EngineInterface, path: string): Promise<Me
   const copy = joinPath(await dataDir($), 'm', randomName(), name)
   await $.fs.write(copy, res.text)
   copies.push(copy)
-  return { path: copy }
+  return { path: copy, text: `Contents of ${name}:\n${res.text}` }
 }
 
 /** A failed check follows on_check_failure (R-03, R-12). */

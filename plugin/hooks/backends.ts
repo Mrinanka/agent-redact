@@ -9,7 +9,8 @@ import { writeLog } from './log-file.ts'
 import { warn } from './warn.ts'
 
 export async function osOf($: EngineInterface): Promise<StoreOS> {
-  if ((await $.env.get('OS')) === 'Windows_NT' || (await $.env.get('SYSTEMROOT')) !== undefined) return 'windows'
+  // A drive letter says Windows even where a host passes a short environment.
+  if ((await $.env.get('OS')) === 'Windows_NT' || /^[A-Za-z]:[\\/]/.test(await $.session.cwd())) return 'windows'
   try {
     const r = await $.process.run(['uname', '-s'], { timeoutMs: 5000 })
     return r.stdout.trim() === 'Darwin' ? 'macos' : 'linux'

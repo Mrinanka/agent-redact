@@ -6,7 +6,7 @@ import { expect, mock, test } from 'claude-code/testing'
 
 const FAKE = ['ghp', 'Qw3rTy7UiOp9AsDf1GhJk5LzXc8VbNm2ZxCv'].join('_')
 
-type Options = { settings?: Record<string, unknown>; files?: Record<string, string>; messages?: unknown[]; policy?: Record<string, unknown>; check?: boolean; submit?: boolean; mention?: string[]; compact?: boolean; env?: boolean }
+type Options = { settings?: Record<string, unknown>; files?: Record<string, string>; messages?: unknown[]; policy?: Record<string, unknown>; check?: boolean; submit?: boolean; mention?: string[]; compact?: boolean; env?: boolean; mentionNothing?: boolean }
 const SECRET = ['acme', 'internal', 'Zq93Kd77'].join('-')
 
 type World = { states: unknown[]; stdin: string[]; closed: string[]; clock: { now: number }; storeDown: { on: boolean }; writes: { path: string; text: string }[]; ui: string[]; ran: string[]; files: Record<string, string>; session: ReturnType<typeof mock.session> }
@@ -15,11 +15,17 @@ function world(on: On, o: Options = {}): World {
   const writes: World['writes'] = []
   const ui: string[] = []
   const ran: string[] = []
-  const files: Record<string, string> = { ...(o.files ?? {}) }
+  // The engine makes a Windows path relative on other systems, so a test names files from the drive on.
+  const norm = (p: string): string => {
+    const n = p.replace(/\\/g, '/').replace(/^d:/, 'D:')
+    return n.slice(Math.max(n.indexOf('D:/'), 0))
+  }
+  const files: Record<string, string> = Object.fromEntries(Object.entries(o.files ?? {}).map(([k, v]) => [norm(k), v]))
   const session = mock.session(on)
   if (o.check) on('tool.check', () => ({ decision: 'allow' }))
   if (o.submit) on('prompt.submit', (_$, e) => ({ text: e.text }))
   if (o.compact) on('session.compact', () => ({ messages: [] }))
+  if (o.mentionNothing) on('prompt.mention', () => ({ type: null }))
   if (o.mention) {
     const seen = o.mention
     on('prompt.mention', (_$, e) => {
@@ -50,13 +56,13 @@ function world(on: On, o: Options = {}): World {
   on('session.version', () => ({ value: { version: '2.1.316', base: '2.1.316', builtAt: 'x' } }))
   on('session.messages', () => ({ value: o.messages ?? [] }))
   on('settings.read', (_$, e) => ({ value: e.source === 'user' ? { secretShield: o.settings ?? {} } : e.source === 'policy' ? (o.policy ?? {}) : {} }))
-  on('fs.exists', (_$, e) => ({ value: e.path in files }))
-  on('fs.read', (_$, e) => ({ value: files[e.path] ?? '' }))
-  on('fs.stat', (_$, e) => ({ value: { kind: 'file', size: (files[e.path] ?? '').length, realPath: e.path } }))
+  on('fs.exists', (_$, e) => ({ value: norm(e.path) in files }))
+  on('fs.read', (_$, e) => ({ value: files[norm(e.path)] ?? '' }))
+  on('fs.stat', (_$, e) => ({ value: { kind: 'file', size: (files[norm(e.path)] ?? '').length, realPath: e.path } }))
   on('fs.list', () => ({ value: o.env ? [{ name: '.env', kind: 'file', size: 60 }] : [] }))
   on('fs.write', (_$, e) => {
     writes.push({ path: e.path, text: e.text })
-    files[e.path] = e.text
+    files[norm(e.path)] = e.text
     return { value: undefined }
   })
   // DPAPI stood in by an echo: what goes in on stdin comes back on stdout.
@@ -298,9 +304,19 @@ test('an @ file with a secret is read from a copy with the same name and no secr
   const w = world(on, { files: { [file]: `key ${FAKE}\n` }, mention: seen })
   await $.prompt.mention({ mention: 'notes.txt', path: file })
   expect(seen[0]?.endsWith('notes.txt')).toBe(true)
-  expect(seen[0]).not.toBe(file)
-  expect((w.files[seen[0] as string] ?? '').includes(FAKE)).toBe(false)
+  expect(seen[0]?.includes('secret-shield')).toBe(true)
+  expect(Object.values(w.files).some(t => t.includes('[REDACTED:'))).toBe(true)
+  expect(w.writes.some(x => x.path.endsWith('notes.txt') && !x.text.includes(FAKE))).toBe(true)
   noFake(w)
+})
+
+test('if the engine will not attach the copy, the redacted text goes as context, never the file', async ($, on) => {
+  const file = 'D:\\work\\notes.txt'
+  world(on, { files: { [file]: `key ${FAKE}\n` }, mentionNothing: true })
+  const out = await $.prompt.mention({ mention: 'notes.txt', path: file })
+  const text = JSON.stringify(out)
+  expect(text.includes(FAKE)).toBe(false)
+  expect(text.includes('[REDACTED:')).toBe(true)
 })
 
 test('an @ file with nothing to hide is read as it is', async ($, on) => {

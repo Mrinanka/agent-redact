@@ -105,7 +105,10 @@ export const register: Register = on => {
   on('prompt.mention', async ($, e, next) => {
     const out = await checkMention($, e.path)
     if (out === 'as-is') return next(e)
-    return 'deny' in out ? { deny: out.deny } : next({ ...e, path: out.path })
+    if ('deny' in out) return { deny: out.deny }
+    const read = await next({ ...e, path: out.path })
+    // The engine would not attach the copy: the redacted text goes as context instead, never the file.
+    return read.deny === undefined && read.type === null ? { ...read, context: [...(read.context ?? []), out.text] } : read
   }).catch(async ($, e, next) => {
     if (next.called) return next(e)
     const deny = await failedMention($, next.error.kind, (await failureMode($)) === 'hold')
