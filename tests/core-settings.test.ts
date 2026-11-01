@@ -195,10 +195,10 @@ test('unknown keys are a notice, not an error', () => {
   assert.ok(r.notices.some(n => n.includes('flavour')))
 })
 
-test('settings that do nothing yet say so: personal_data on, media drop, observe mode', () => {
+test('a setting that does nothing yet says so: personal_data on. Media drop and observe mode now work', () => {
   assert.ok(resolve({ user: { personal_data: 'on' } }).notices.some(n => /personal_data.*not available yet/.test(n)))
-  assert.ok(resolve({ user: { media: 'drop' } }).notices.some(n => /media.*not available yet/.test(n)))
-  assert.ok(resolve({ user: { mode: 'observe' } }).notices.some(n => /observe.*not available yet/.test(n)))
+  assert.ok(!resolve({ user: { media: 'drop' } }).notices.some(n => /not available yet/.test(n)))
+  assert.ok(!resolve({ user: { mode: 'observe' } }).notices.some(n => /not available yet/.test(n)))
   assert.equal(resolve({ user: { hints: 'off' } }).notices.length, 0)
 })
 

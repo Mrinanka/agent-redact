@@ -80,6 +80,19 @@ Tiny clarifications go under **Minor** at the bottom.
 | D-052 | What is remembered is capped, because a matcher build can't be interrupted | accepted | step 3 | 7, 8.1 |
 | D-053 | What is kept for a restart is capped at one `$.state` write, catches first | accepted | step 3 | 8.1, 9, 12 |
 | D-054 | Four `/code-review high` findings from step 3 are rejected | accepted | step 3 | 8.1 |
+| D-055 | Self-protection covers the tool's files and the settings that switch it off | accepted | 4 | 17, 22 |
+| D-056 | The resume block drops the next prompt | accepted | 4 | 6.1 |
+| D-057 | `/redact add` takes the secret in a pane, never on the command line | accepted | 4 | 8, 15, 22 |
+| D-058 | Self-protection stays on in observe mode | accepted | 4 | 13 |
+| D-059 | The plain doctor command is `/secret-shield:doctor` | accepted | 4 | 5.3, 15 |
+| D-060 | `/redact allow` with no tag, and `--always` in the OS store | accepted | 4 | 10, 11, 15 |
+| D-061 | A small flag file says a list exists | accepted | 4 | 8.1 |
+| D-062 | A registered door, and the matcher build measured in the real worker | accepted | 4 | 20 |
+| D-063 | The catch cap is a known limit | accepted | 4 | 22 |
+| D-064 | A secret inside a forged placeholder stays a known limit | accepted | 4 | 22 |
+| D-065 | Spec §9 names the tag exceptions | accepted | 4 | 9 |
+| D-066 | A guard that can't look has failed, and fails as §12 says | accepted | 4 | 10, 12, 13 |
+| D-067 | Self-protection follows links for files not there yet, and in its own roots | accepted | 4 | 17 |
 
 ## Entry template (short form, from D-018 on)
 
@@ -576,6 +589,97 @@ Tiny clarifications go under **Minor** at the bottom.
 - Rejected: Fixing them in step 3 (no real failure to fix).
 - Evidence: Measured on Windows under Node in that check: a 190 KB registered value builds in 189 ms, against 763 ms for the 1,900-secret list D-045 accepted. A fresh checker takes about 2 ms; sharing one saves about 0.5 s of a 13.4 s measure run. The timing tests took at most 309 and 275 ms against limits of 2,000 and 3,000, and 652 and 556 ms with every core busy. Still open: the matcher build under the real worker (progress, Known issues).
 
+## D-055: Self-protection covers the tool's files and the settings that switch it off
+- Date / Step: 2026-11-01 / 4        Status: accepted
+- Decision: Deny any write to the data and plugin folders. In Claude Code settings files, deny only a change to `disableAllHooks`, `allowManagedHooksOnly`, `hooks`, `enabledPlugins`, `secretShield` or `env.CLAUDE_CODE_SIMPLE`. Bash and PowerShell get a best-effort text check.
+- Why: Check 0.14: one setting silently turns both locks off, and spec §3 has injection in scope. The owner chose this option.
+- Rejected: Own files only (leaves the hole). Denying all settings writes (blocks ordinary edits).
+- Evidence: Findings 0.14; a real run stopped a Write of `disableAllHooks`; `tests/core-lock.test.ts`. Weak spot: a disguised shell command, in spec §22.
+
+## D-056: The resume block drops the next prompt
+- Date / Step: 2026-11-01 / 4        Status: accepted
+- Decision: Scan at `prompt.submit` and drop the prompt with R-06's message; skip `session.compact`; hold `turn.step` as a backstop.
+- Why: The drop shows the reason, and `/compact` would send the history too. The owner chose this option after asking whether old chats stay usable.
+- Rejected: `turn.step` hold alone: `-p` prints only "Execution error" and exits 1.
+- Evidence: Scratch runs on 2.1.316: drop printed the reason with no request; skip made no request. Leak door `resume`: 0 of 7, no request. Not yet hand-checked in an interactive `/resume`.
+
+## D-057: `/redact add` takes the secret in a pane, never on the command line
+- Date / Step: 2026-11-01 / 4        Status: accepted
+- Decision: A pane with an `Input`; the value goes to the store on stdin. Anything but `--label name` after `add` is refused, taken off the command row, and the person is told to rotate.
+- Why: A value in the args stayed in history and reached the model on the next run, and with hooks off it went straight to the model. The owner chose this option.
+- Rejected: Accepting args and masking (relies on masking, and fails open with hooks off).
+- Evidence: Scratch runs; real run: no value on disk or in a request after the refusal. Cost: `Input` has no masking (`claude-code.d.ts:5656`), so it shows while typed, and there is no `add` in `-p`.
+
+## D-058: Self-protection stays on in observe mode
+- Date / Step: 2026-11-01 / 4        Status: accepted
+- Decision: Detections go log-only; denials of writes to the tool's files and kill switches continue.
+- Why: Spec §13 and §17 disagreed. An injection during a trial must not switch the tool off. The owner chose this option.
+- Rejected: Everything log-only.
+- Evidence: `plugin/hooks/lock.test.ts`.
+
+## D-059: The plain doctor command is `/secret-shield:doctor`
+- Date / Step: 2026-11-01 / 4        Status: accepted
+- Decision: `plugin/commands/doctor.md` says the hooks are off; while they run, a `command.run` hook answers it instead. Its name follows the final plugin name.
+- Why: A plugin's markdown command always carries the plugin's name, so `/redact doctor` can't work with hooks off. Approved with the step 4 plan.
+- Rejected: A bare `/redact` markdown command (does not resolve).
+- Evidence: Scratch runs on 2.1.316; real run with `disableAllHooks`: the body reached the model. `disable-model-invocation` kept the model out, and the engine refuses a registered command through Skill.
+
+## D-060: `/redact allow` with no tag, and `--always` in the OS store
+- Date / Step: 2026-11-01 / 4        Status: accepted
+- Decision: With no tag it lifts a resume block, or gives the last guarded file one pass. `--always` saves the value as a `harmless` list entry.
+- Why: R-06 and R-11 name a bare allow. A settings file is plain text, so `allow` there would break R-09 for a value marked from a tag. Approved with the step 4 plan.
+- Rejected: Writing the value into settings.
+- Evidence: `plugin/hooks/lock.test.ts`.
+
+## D-061: A small flag file says a list exists
+- Date / Step: 2026-11-01 / 4        Status: accepted
+- Decision: `saveList` writes a non-secret `has-list` file before the index and clears it when the list is emptied. `hasList()` answers from it first. A list that can't be read warns, reports `locked`, is retried after 1 minute, doubling to 15, and refuses saves.
+- Why: A locked store could pass for "no list" with no warning (progress, Known issues).
+- Rejected: Reading the store to find out (the gap itself).
+- Evidence: `tests/core-store-locked.test.ts`; `tests/store-locked-real.test.ts` in CI run 41289370109: a really locked Keychain and keyring both gave 0 entries, `locked` and a warning. The macOS Keychain was also seen to load again once unlocked; the Linux keyring wasn't unlocked in the test.
+
+## D-062: A registered door, and the matcher build measured in the real worker
+- Date / Step: 2026-11-01 / 4        Status: accepted
+- Decision: `STORE_SCENARIOS` holds a `registered` door of bare values. It runs on Windows, or with `--allow-real-store`, because elsewhere the store is the machine's own. Closes D-054's open item.
+- Why: Nothing had run a saved list through a real session. Doing so found a real bug: with `OS` unset, Windows read as Linux and the list was silently skipped; a drive letter in the working folder now counts too.
+- Rejected: Hook tests alone (they missed that).
+- Evidence: Windows, pinned 2.1.316: a list of 1,900 values, a 3.6 s session, the value hidden, 0 failure lines. The 1,900 figure is Windows only. `registered` door 0 of 7 on all 3 OSes, CI run 41289370109.
+
+## D-063: The catch cap is a known limit
+- Date / Step: 2026-11-01 / 4        Status: accepted
+- Decision: Spec §22 now says the catch list can be filled by content (5,000 values, 100,000 characters). No code change.
+- Why: It is a real limit and the spec should say so. The owner chose this.
+- Rejected: A bigger cap (a bigger matcher build can kill the worker, D-052).
+- Evidence: `src/core/session.ts:143`, `:144`; Known issues had one 141,000-character file filling it.
+
+## D-064: A secret inside a forged placeholder stays a known limit
+- Date / Step: 2026-11-01 / 4        Status: accepted
+- Decision: The code stays as it is. Spec §22 records the limit.
+- Why: It only happens on purpose, and a fix wouldn't stop `rev` or other ways of disguising a secret. The owner chose this.
+- Rejected: Treating a shape with an unknown tag as ordinary text (it closes this one route and leaves the others).
+- Evidence: A scratch run on the step 4 tree: an AWS key id and an upper-case registered value inside the shape stayed visible, a mixed-case token was hidden, and a known password inside the shape stayed visible. Correction to the earlier note that a later bare copy is still caught: true for a value with a shape, a registered value or an earlier catch. A shapeless value seen first inside the shape is never caught, so its bare copy stays visible too.
+
+## D-065: Spec §9 names the tag exceptions
+- Date / Step: 2026-11-01 / 4        Status: accepted
+- Decision: §9 now says a value that couldn't be saved for a restart gets a new tag: over 8,192 characters (D-052), or past the saved list's cap (D-053).
+- Why: It's cosmetic, since nothing is revealed, but the spec wasn't true as written. The owner chose this.
+- Rejected: Saving fingerprints so such a value keeps its tag (the only hash here is async).
+- Evidence: `src/core/session.ts`, `exportCatches`.
+
+## D-066: A guard that can't look has failed, and fails as §12 says
+- Date / Step: 2026-11-01 / 4        Status: accepted
+- Decision: The overwrite guard no longer treats an unreadable or over-4-MiB file as empty: that is a failed check, which warns, logs, and is denied under `hold`. Every refusing hook warns and logs what really happened, `turn.step` has a `.catch`, and `session.compact` and `turn.step` leave their whole check to it. Observe mode holds nothing, even under `hold`.
+- Why: The missing tests found all of it. The guard passed silently under both settings, because `$.fs.read` rejects over 4 MiB and the error was swallowed; `tool.check` and `session.compact` failed with no warning; `tool.call` logged `allowed` when it had denied. R-12 says every failure.
+- Rejected: Reading a big file in parts (the API has no range read). Replaying a `turn.step` stream after a failure: a test showed it sends the request twice, so the failure is passed on.
+- Evidence: `plugin/hooks/lock.test.ts`. Real run on 2.1.316 with an API that answers 400: the same 6 requests and the same error with and without the plugin, and no failure line.
+
+## D-067: Self-protection follows links for files not there yet, and in its own roots
+- Date / Step: 2026-11-01 / 4        Status: accepted
+- Decision: A path lands where its nearest existing folder lands. The data, plugin and config folders are compared in both spellings.
+- Why: A Write of a new file through a linked folder passed, because `realPath` is absent for a missing file, and so did a real path when the config folder is itself a link (a common dotfiles setup).
+- Rejected: Refusing every path that can't be resolved (the API's own example for an allow-list; here it would refuse each new file).
+- Evidence: `plugin/hooks/lock.test.ts`, with links simulated. A scratch run on 2.1.316 with a real Windows junction into the data folder: a Write of a new file was refused with this tool's message and nothing landed. The config-folder case is simulated only.
+
 ---
 
 ## Minor
@@ -602,4 +706,5 @@ Tiny clarifications go under **Minor** at the bottom.
 - 2026-11-01 / 3: The owner approved narrowing the "no Node globals" guard in `tests/plugin-build.test.ts`, whose `process.` pattern matched `$.process`, the engine's API. The change also skips a quoted event name (`on('process.run', ...)`), which the same guard tripped on in the hook tests. A test proves it still catches Node's `process`.
 - 2026-11-01 / 3: `LICENSE`, `NOTICE` and `THIRD_PARTY_LICENSES` are copied into `plugin/` by `npm run plugin:build`, because an install may copy that folder alone.
 - 2026-11-01 / 3: A 3 MB paste of `[REDACTED:` makes `claude -p` exit 1 with no request, with no plugin loaded too. It isn't the tool's doing.
+- 2026-11-01 / 4: The owner parked the step 4 hand checks and shipped the step without them. They stay in progress, Known issues, to run before release.
 - 2026-11-01 / 3: The owner approved adding "Very long values" to spec §22 and a one-time warning when a value is too long to remember, after `/code-review high`. D-052 stands. Its "hidden where it was found" also means a bare copy later in the same text stays visible, which a scratch run showed at 8,193 characters and not at 8,192.

@@ -166,8 +166,6 @@ function expandLocks(names: string[]): Set<string> {
 function notYet(s: Settings): string[] {
   const out: string[] = []
   if (s.personal_data === 'on') out.push('personal_data: on is not available yet; emails and phone numbers are not hidden')
-  if (s.media === 'drop') out.push('media: drop is not available yet; images and documents are passed')
-  if (s.mode === 'observe') out.push('mode: observe is not available yet; secret-shield keeps hiding secrets')
   return out
 }
 

@@ -4,7 +4,7 @@ An open-source tool that stops secrets from reaching the model when developers u
 
 - **Status:** draft.
 - **License:** Apache-2.0.
-- **Last updated:** 31 October 2026.
+- **Last updated:** 1 November 2026 (step 4, D-055 to D-060, D-063 to D-065).
 - **Maintainer:** (your name)
 
 **How to read this spec.** Requirements a build must meet have an ID (`R-01`) and the word **must**. Tests in `plan.md` point to these IDs. **Should** means strongly recommended but not release-blocking. Facts about Claude Code were checked on a real machine in Step 0; the evidence is in `docs/findings-step0.md`, and a check number (`0.4`) points to its row.
@@ -109,7 +109,7 @@ Settings-file hooks (`UserPromptSubmit`, `PreToolUse`, `PostToolUse`) that run t
 | If a project's `.claude/settings.json` (or `settings.local.json`) sets `disableAllHooks` | **Does nothing**, silently. Both locks are off (check 0.14). | Works: a project can't turn off managed hooks |
 | `--safe-mode`, `--bare`, `CLAUDE_CODE_SIMPLE=1` | **Does nothing** (checks 0.8, 0.14) | Safe mode: managed backup-lock hooks still run |
 
-- **R-05** When the tool can't run its hooks (for example under `allowManagedHooksOnly`, `disableAllHooks` or `--safe-mode` in Personal mode), it **must** say so plainly where possible. Users must never believe they are protected when they aren't. When hooks are blocked, none of the tool's code runs (checks 0.7, 0.14), so `/redact doctor` **must** also work as a plain command without hooks, and say when the hooks are not running.
+- **R-05** When the tool can't run its hooks (for example under `allowManagedHooksOnly`, `disableAllHooks` or `--safe-mode` in Personal mode), it **must** say so plainly where possible. Users must never believe they are protected when they aren't. When hooks are blocked, none of the tool's code runs (checks 0.7, 0.14), so a plain command with no hooks, `/secret-shield:doctor`, **must** say the hooks are not running. A plugin's plain command always carries the plugin's name; `/redact` only exists while the hooks run (D-059).
 
 ## 6. What gets checked
 
@@ -129,7 +129,7 @@ Settings-file hooks (`UserPromptSubmit`, `PreToolUse`, `PostToolUse`) that run t
 
 Rows loaded by `/resume` are **not** passed through `session.append`. Claude Code sends them as they were stored. A session from before the tool was installed, or from before a secret was registered, can therefore contain raw secrets.
 
-- **R-06** When a session is resumed, the tool **must** scan the loaded history. If it finds a secret, it **must** block the next prompt and tell the user: "This session's history contains N secrets that the model would see again. Start a new session (or `/redact allow` to continue anyway)." How (check 0.3): read the history at the first `turn.start` (after an in-session `/resume`, `session.start` has run before the history loads), and block by answering the first request without sending it. Claude Code shows nothing when a request is held, so the tool **must** show its own message.
+- **R-06** When a session is resumed, the tool **must** scan the loaded history. If it finds a secret, it **must** block the next prompt and tell the user: "This session's history contains N secrets that the model would see again. Start a new session (or `/redact allow` to continue anyway)." How (check 0.3, D-056): read the history at `prompt.submit` (after an in-session `/resume`, `session.start` has run before the history loads) and drop the prompt, which shows the reason. While the block stands, `/compact` is skipped, because it would send the history too, and any turn with no prompt is held at `turn.step`.
 
 ### 6.2 Secrets registered mid-session
 
@@ -225,7 +225,7 @@ A placeholder in place of each secret, for example:
 
 - **Label:** what kind of secret it was.
 - **Last 4 characters:** only for secrets of 12 or more characters, and never for password-label values (check 2). Setting `hints: off` removes them.
-- **Random tag:** 13 base32 characters, which is 65 random bits from a secure source. The same secret gets the same tag within a session, including in subagents. Two different secrets never share a tag.
+- **Random tag:** 13 base32 characters, which is 65 random bits from a secure source. The same secret gets the same tag within a session, including in subagents. The rare exception is a restart of the hidden checks mid-session: a value that could not be saved for it, because it is over 8,192 characters (D-052) or didn't fit in the saved list (D-053), gets a new tag. Nothing is revealed. Two different secrets never share a tag.
 
 The placeholder note added to Claude's instructions says:
 - These are hidden values.
@@ -279,7 +279,7 @@ Claude Code gives each hook **10 seconds of its own time**: time spent waiting o
 | `mode` | What happens |
 |---|---|
 | `enforce` (default) | Everything in this spec |
-| `observe` | Nothing is hidden or blocked. Every detection is logged as "would have hidden". A permanent banner says `secret-shield: OBSERVE MODE, secrets are NOT being hidden`. |
+| `observe` | Nothing is hidden or blocked. Every detection is logged as "would have hidden". A permanent banner says `secret-shield: OBSERVE MODE, secrets are NOT being hidden`. Self-protection (section 17) stays on: it is no detection, and a trial must not be able to switch the tool off (D-058). |
 
 Observe mode is for organizations measuring false alarms before rollout.
 
@@ -328,11 +328,11 @@ A project **can** add custom rules and `secret_files` patterns, and choose stric
 | Command | What it does |
 |---|---|
 | `/redact` | Status of the main and backup locks, the mode, what was hidden this session (type, where, hint), files that got placeholders |
-| `/redact add` | Register a secret |
+| `/redact add [--label name]` | Register a secret, pasted into a box. Never on the command line, and not in `claude -p` (D-057) |
 | `/redact learn` | Pick secrets from `.env*` files |
-| `/redact allow <tag>` | Mark a hidden value as harmless (`--always` to remember) |
+| `/redact allow <tag>` | Mark a hidden value as harmless (`--always` to remember, in the OS password store). With no tag: lift a resume block, or let the last guarded change through once (D-060) |
 | `/redact self-check` | Runs built-in test cases and shows pass or fail. `--report` writes a shareable report file (no secrets) for a security team or a bug report. |
-| `/redact doctor` | Checks the environment: Claude Code version (tested or not), Personal or Managed mode, plugin tier, whether hooks are allowed to run, password store available, backup lock installed, marker present, settings valid. Says what to fix. |
+| `/redact doctor` (also `/secret-shield:doctor`) | Checks the environment: Claude Code version (tested or not), Personal or Managed mode, plugin tier, whether hooks are allowed to run, password store available, backup lock installed, marker present, settings valid. Says what to fix. |
 
 - **R-16** Claude **must not** be able to run these commands. Only the user can.
 
@@ -347,7 +347,7 @@ A project **can** add custom rules and `secret_files` patterns, and choose stric
 
 - **No network.** It never contacts the internet. No telemetry.
 - **No runtime libraries.** All code that runs is in the repo and reviewable. Build-time dev dependencies are pinned with a lockfile.
-- **Protects its own files.** Claude's tool calls are denied if they try to change the tool's settings, registered secrets, log or plugin folder. This stops a malicious web page or file from tricking Claude into turning it off.
+- **Protects its own files.** Claude's tool calls are denied if they try to change the tool's settings, registered secrets, log or plugin folder, or to change `disableAllHooks`, `allowManagedHooksOnly`, `hooks`, `enabledPlugins`, `secretShield` or `env.CLAUDE_CODE_SIMPLE` in a Claude Code settings file. Other settings edits pass. This stops a malicious web page or file from tricking Claude into turning it off (D-055).
 - **Patterns can't get stuck.** Every pattern is checked when the tool is built, and patterns only run on small pieces of text (section 18). A stuck check that runs out its 10-second budget lets content through by default (section 12).
 - **Tier note:** in Personal mode, a plugin installed in a higher tier could skip this tool's hooks. Managed mode installs it in the `prepend` tier, where no user plugin can skip it.
 
@@ -430,7 +430,12 @@ The maintainers can't test inside every organization. So everything needed to te
 - **Observe mode** hides nothing, by design.
 - **Bare values in base64.** A value with no shape and no label is found once it is decoded only if it has a shape, was registered, or was caught earlier. The catch set has 3 such cases (D-046).
 - **Very long values.** A value over 8,192 characters isn't remembered (D-052). It is hidden, or blocked, wherever its shape or label is found, but a copy with neither is neither hidden nor blocked, even later in the same text. The person is warned once.
+- **A full catch list.** What was caught this session is remembered up to 5,000 values and 100,000 characters (D-052, D-063). One large file of token-like text can fill that. After it fills, a new secret is still hidden where its shape or label is found, but a bare copy of it later is not, unless it was registered. The person is warned once.
+- **Text shaped like a placeholder.** The tool leaves its own placeholder shape alone, so a secret written inside that shape reaches the model and skips a `block` rule. The value has to fit the shape, so it works for one made of capitals and digits, such as an AWS key ID, and not for a mixed-case token. It only happens on purpose, but a prompt injection can cause it, as it can with `rev` (section 3). A bare copy is hidden as usual if the value has a shape, is registered or was caught (D-064).
 - **Kubernetes Secret files.** The Gitleaks rule for them is left out (D-038). A value under a key named like a password is still hidden. Others are not: `.dockerconfigjson` registry credentials, or a connection string under a key like `dbconn`.
+- **Shell commands and self-protection.** The check on Bash and PowerShell reads the command's text, so a disguised command gets past it (D-055).
+- **A value typed after a command.** With the hooks off, `/redact add <value>` is an ordinary prompt and reaches the model. With them on it is refused and taken off the row, but it was still typed: rotate it (D-057).
+- **Scripted runs.** `claude -p` draws nothing, so warnings and the observe banner only reach the log.
 - **Determined attacks.** The tool stops accidental leaks. It doesn't stop a person who deliberately splits up or scrambles a secret.
 
 ## 23. Later (parked)

@@ -70,6 +70,10 @@ jobs:
         run: claude plugin test ./plugin
       - name: Leak test, core hiding
         run: npm run leak-test:core -- --require-pinned
+      # Step 4 "Done when": every door, a stopped resume and a registered value included.
+      - name: Leak test, every door
+        if: runner.os != 'Linux'
+        run: npm run leak-test -- --require-pinned --allow-real-store
       # D-036: what one store item holds and how long reading many takes. Sizes and times only.
       - name: Password store limits
         run: npm run measure:store
@@ -84,6 +88,12 @@ jobs:
           node experiments/step0-mock/run.ts store
           dbus-run-session -- sh -c 'printf ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null; node experiments/step0-mock/run.ts store'
           dbus-run-session -- sh -c 'printf ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null; npm run measure:store; node --test tests/store-real.test.ts'
+          dbus-run-session -- sh -c 'printf ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null; STORE_LOCK_TEST=1 node --test tests/store-locked-real.test.ts'
+          dbus-run-session -- sh -c 'printf ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null; npm run leak-test -- --require-pinned --allow-real-store'
+      # A really locked store (Known issues): a list must warn, never read as "no list".
+      - name: macOS locked Keychain
+        if: runner.os == 'macOS'
+        run: STORE_LOCK_TEST=1 node --test tests/store-locked-real.test.ts
       # The proxy trap only sees traffic that honours proxy settings. Here nothing can
       # leave: the namespace has only loopback, and the first line proves it.
       - name: Linux baseline with no network

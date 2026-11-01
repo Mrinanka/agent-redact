@@ -2,7 +2,7 @@
 
 Spec: `docs/spec.md`. Plan: `docs/plan.md`. Parked work: spec §23.
 
-**Current focus:** Step 4, Rest of the main lock (branch `step-4` from `develop`). Start with `/plan-step`.
+**Current focus:** Step 5, Backup lock + tuning (branch `step-5` from `develop`). Start with `/plan-step`. The step 4 hand checks are still open (Known issues).
 
 ## Steps
 
@@ -12,7 +12,7 @@ Spec: `docs/spec.md`. Plan: `docs/plan.md`. Parked work: spec §23.
 | 1 | Test kit | `step-1` | ☑ |
 | 2 | Checker | `step-2` | ☑ |
 | 3 | Core hiding + Audit 1 | `step-3` | ☑ |
-| 4 | Rest of the main lock | `step-4` | ☐ |
+| 4 | Rest of the main lock | `step-4` | ☑ |
 | 5 | Backup lock + tuning | `step-5` | ☐ |
 | 6 | Release + Audit 2 | `step-6` | ☐ |
 
@@ -25,7 +25,6 @@ Bugs, unfinished bits and open questions. Features we chose not to build go in s
 - D-005: the owner's reason for `on_check_failure: allow` was never recorded.
 - Probe tests (`claude plugin test`) don't run in CI. The pinned `claude` now makes that possible; it wasn't added in step 1.
 - `claude plugin test` (2.1.316): a `turn.step` stream's `.result` resolves `undefined` even when the step beneath answers, contrary to its doc (`HookStream.result`, `claude-code.d.ts:5383`). Probe tests check the hold through its effects instead. Report it upstream.
-- Self-protection (§17) should probably also cover Claude Code's own settings files: a prompt injection could make Claude write `disableAllHooks` into `.claude/settings.local.json` (check 0.14). Decide in step 4.
 - The desktop app's probe log had no `start` line, so its Claude Code version wasn't recorded. Check before release.
 - The kit's no-network proof is strongest on Linux, where nothing can leave (loopback-only namespace). On Windows and macOS the proxy trap only sees traffic that honours proxy settings.
 - The macOS Keychain call at 1 MB was refused before it ran, and the check doesn't record why. Log the cause when the store limit is measured.
@@ -49,19 +48,25 @@ Bugs, unfinished bits and open questions. Features we chose not to build go in s
 - `npm run plugin:typecheck` needs the API types, which only a loaded mod or the `plugin-authoring` skill provides, so it isn't in CI. `/verify` runs it.
 - Large-paste stress runs were by hand, against the kit's mock: 2 MB each, on Windows. No kit door covers them yet.
 - A hook killed outright sends its whole row unhidden under the default `allow`, whatever the cause (D-050). Anything that can't check a deadline must be bounded by size.
-- `/redact add` is step 4, so no real session has saved a list yet. Save and load are proven on all 3 stores by `tests/store-real.test.ts`.
 - A value over 8,192 characters isn't remembered (D-052, spec §22): a bare copy is neither hidden nor blocked, and the person gets a one-time warning. Keeping such values in a side list found by a plain text search would close this with no matcher build, but it reopens D-052.
-- A value over 8,192 characters gets a new tag after a worker restart, because D-052 keeps it out of `$.state`. That breaks spec §9 "the same tag within a session". It's cosmetic: nothing gets unhidden. A fix needs a synchronous fingerprint, and the only hash here is async (`store.ts`). Its entry in the `tags` map also stays for the worker's life.
-- `exportCatches` skips the catch cap for tagged values the catch list refused: in a scratch run 240,160 characters went to `$.state`, 96,064 of them real catches. Those values never reach the matcher. D-053 caps the export at 4,000,000 characters of JSON, because the host refuses a `$.state` write over 4,194,304. A tagged value past that cap gets a new tag after a restart, which is cosmetic but is a second exception to spec §9 "the same tag within a session". The `tags` map itself has no cap, so it still grows for the worker's life.
-- Fix before `/redact add` ships (step 4): a locked or timed-out store is silent on macOS and Linux. There `hasList()` reads the store, so a failure takes the quiet "no store" path in `loadList` (`src/core/store.ts:95-101`), although a list exists. On macOS `security default-keychain` also passes, so the result doesn't even say `locked`, and the plugin doesn't read `unavailable` anyway. `runtime.ts` keeps the empty list until the worker restarts, so secrets with no recognisable shape go unhidden for the session with no warning. Not live yet: nothing in the plugin calls `saveList`. Planned fix: `saveList` writes a small non-secret "a list exists" file before the index and clears it when the list is emptied; `hasList()` answers from it first, so a Linux lookup that exits 1 with no error text can't pass for "no list"; then warn, and retry the load at a limited rate, since a failed read can take 20 s. The test at `tests/core-store.test.ts:203` doesn't cover this: its fake answers `hasList()` even when locked. Real exit codes for a locked store are unverified, so step 4's test needs a really locked keychain and keyring.
+- A value over 8,192 characters gets a new tag after a worker restart, because D-052 keeps it out of `$.state`. Spec §9 names this exception (D-065). It's cosmetic: nothing gets unhidden. A fix needs a synchronous fingerprint, and the only hash here is async (`store.ts`). Its entry in the `tags` map also stays for the worker's life.
+- `exportCatches` skips the catch cap for tagged values the catch list refused: in a scratch run 240,160 characters went to `$.state`, 96,064 of them real catches. Those values never reach the matcher. D-053 caps the export at 4,000,000 characters of JSON, because the host refuses a `$.state` write over 4,194,304. A tagged value past that cap gets a new tag after a restart, which is cosmetic and is the second exception in spec §9 (D-065). The `tags` map itself has no cap, so it still grows for the worker's life.
 - Windows reads about 0.5 s per item, so a session with a list spends about 1 s at start, for the index and the list.
-- On a Linux machine with no keyring the store reads as `missing`, and nothing says so until `/redact doctor` exists (step 4). Spec §8.1 expects this.
 - Audit 1 ran before the last fixes. `/security-review` and `/code-review high` covered the step's code, then the too-long warning, the `constructor` fix and D-053 went in, and neither audit was run again on those. They were tested instead: 8 reverts on a scratch copy, each caught by the new tests.
-- Spec §9 still says "the same tag within a session", with no mention of the two exceptions above (values over 8,192 characters, and tagged values past D-053's cap). Rewording it needs the owner's yes.
-- The catch cap can be filled by content (D-052): one 141,000-character file of token-shaped text, or 13 long key-shaped values, fills it. For the rest of the session a password hidden beside its label shows when it appears bare later. The person is warned once, and hiding or blocking by shape keeps working. Adding this to spec §22 was recommended but not approved; the owner hasn't ruled on it.
-- A secret written inside a forged placeholder shape is treated as a placeholder, so it reaches the model and skips a `block` rule. Confirmed with an AWS key id and an upper-case registered value; mixed-case tokens stay hidden, and a later bare copy is still caught. An injected `echo` of a variable inside the shape needs no knowledge of the value, so "whoever writes it already has it" doesn't hold. It only happens on purpose, and `rev` does the same job (spec §3, §22). The recommendation was to leave the code alone; the owner hasn't ruled on it.
-- The matcher build for a registered list runs before the 4 s deadline starts, and a worker is cut off at about 6 s. Builds were only timed under Node (D-054), not in the real worker. Measure it when `/redact add` makes a saved list real (step 4).
 - `claude plugin validate` passes, but warns that `plugin/README.md` has no marketplace install line. That comes with the marketplace in step 6.
+
+- Step 4 was shipped with its hand checks parked by the owner, so "all commands work" is proven in hook tests and `claude -p` runs, not in a real terminal. `/redact add` and `learn` have never run in one. Still to run before release: interactive `/resume` at `prompt.submit`, the add and learn panes, the `outbound: ask` dialog, the observe band, and whether `/redact` survives `/clear` (it is registered again when the session id changes, unproven interactively).
+- `tests/media-real.test.ts` skips where the pinned Claude Code isn't installed, so CI's test job may skip it. It ran on Windows only (4 of 4).
+- 8 of 120 mutants still survive. Same behaviour, so nothing to test: the `.env` byte order mark (the line pattern's `\s` takes it) and the mention's 8 MiB limit (`$.fs.read` refuses over 4 MiB anyway). Only reachable by running out of time, with no seam to force it: `complete` in `checkOverwrite` once a secret is found, and the "ran out of time" lines in the guard and the mention. Small and untested: a `warn` rule's filter in outbound, the `@` folder early return (the stand-in's read answers where the engine's rejects), and `learnValues.clear()` after a save (values stay in the worker's memory until the next `learn`).
+- `claude -p` shows no `$.ui.log` line, so warnings, R-12 failures and the observe banner only reach the log there (spec §22).
+- After a mistaken `/redact add <value>`, a scratch run with masking showed the value gone from the next request but still in the transcript file; the real plugin's run found it in no file. The difference wasn't traced, so the message still says to rotate.
+- The `@` copy's path holds `secret-shield`, so the model can tell it is a copy. Its Read of the real file is hidden, so nothing leaks.
+- A failed store read can take 20 s, and the retry runs inside a hook, so that row waits.
+- Doctor can't see the plugin's tier, and "Managed" is read from the managed settings holding our key or `enabledPlugins`. Step 5's managed run should check it.
+- `--always` on a value whose store save fails stays harmless for the session only, and says so.
+
+- With a failed store read, rows go through with only the shape checks until a retry works, under the default `allow`: a saved secret with no shape is sent, with a warning. Seen on CI when PowerShell took over 20 s in a cut-down environment; a normal environment read in about 0.2 s (D-045).
+- The `@` context fallback (engine attaches nothing for the copy) only has a hook test: the short-path case it was written for turned out to need the long path instead.
 
 ## Gotchas
 
@@ -100,6 +105,15 @@ Platform and tooling facts learned so far (from the old `lessons.md`).
 - In a shell chain, a `sed` that matches nothing still succeeds. Check a test run's result, not the commands before it, before committing.
 - `npm run plugin:typecheck` needs the types path, and the skill's copy moves: `%TEMP%/claude/bundled-skills/<version>/<hash>/plugin-authoring/types/claude-code.d.ts`, where the hash changes. Find it with a wildcard, not a saved path.
 - To learn whether a command ran, parse the transcript's messages. A raw text search also matches the search itself once it is in the transcript.
+- The Bash tool on this Windows machine breaks a heredoc holding apostrophes or `\n`. Write scripts with the Write tool.
+- Under `claude plugin test`, the test's own `$` and a test hook's `$` can't call nouns the test module doesn't use, and `$.command.run` carries no origin unless the test passes one.
+- A helper taking `$` must be a function declaration: a `const` arrow is a load error, as the store's `today` showed.
+- The kit passes a short list of env variables, and `OS` isn't on it. Code that reads the environment needs a test under the kit.
+- The engine refuses a Windows short name such as `RUNNER~1` for an `@` read. CI's temp folder has one, this PC's doesn't. Pass `realPath`.
+- PowerShell needs `PSModulePath`, and `secret-tool` the D-Bus address: a cut-down environment makes the store fail in ways a normal one doesn't.
+- A regex typed through `sed` can lose its escapes and still run: `/^file:///` became a regex plus a comment.
+- `$.fs.read` rejects a file over 4 MiB, so a `try` around it can turn a big file into an empty one.
+- A `.catch` on a stream is different: `next` there opens a new stream, so `turn.step`'s would send the request again. Throw instead.
 - A review finding pasted into a new session only carries what was pasted. Two "record it" items from one session never reached the docs that way.
 
 ## Session notes
@@ -151,3 +165,16 @@ Newest last, 3–5 lines each: what exists now and what the next session needs.
 - Audit 1 is done: `/security-review` found nothing at confidence 8 or above, and `/code-review high` gave 7 findings. Findings 1 and 3 are recorded, 2 is fixed, and 4 to 7 are rejected (D-054). Of its 4 low-confidence security notes, `constructor` is fixed and the other 3 are in Known issues. Checking them also found the `$.state` failure (D-053).
 - On the tree shipped, on Windows: 678 of 678 in `npm test`, 28 of 28 in `claude plugin test`, typecheck and plugin typecheck clean, `leak-test:core` 0 of 84 seen over 12 doors with 0 network attempts. macOS and Linux results for this tree are on the step 3 PR's CI.
 - Next session needs: step 4. Fix the locked-store gap before `/redact add` ships (Known issues), and decide the self-protection question there.
+
+### 2026-11-01: step 4 (rest of the main lock)
+- New in `src/core/`: `outbound`, `guard`, `protect`, `envfile`, `versions`, `media`, `selfcheck`. New in `plugin/hooks/`: `tools`, `mention`, `resume`, `commands`, `panes.tsx`, `banner.tsx`, `state`; `plugin/commands/doctor.md`. Kit: `heldMessage`, `STORE_SCENARIOS`, plugin log lines on stderr.
+- Decisions D-055 to D-062. The approved test change is `tests/core-settings.test.ts` (media and observe no longer "not available yet").
+- CI run 41289370109 on `c8f0aa8`: all 6 jobs green; every door 0 of 105 on 3 OSes; baseline 98 of 98; locked Keychain and keyring warn. Six wip pushes instead of the one planned, each fixing what the last run found.
+- Next: `/verify`, the hand checks in Known issues, `/ship`.
+
+### 2026-11-01: step 4 tests, fixes and mutation checks
+- The planned tests that were missing are in `plugin/hooks/lock.test.ts` and the new `tests/media-real.test.ts`. They found real bugs, all fixed (D-066, D-067): the guard passed silently on an unreadable or over-4-MiB file, `tool.check` and `session.compact` failed with no warning, `tool.call` logged `allowed` when it denied, self-protection missed a new file through a linked folder and a linked config folder, a missing `@` path counted as a failed check, and observe could hold. `turn.step` now has a `.catch`.
+- 120 mutants on a scratch copy: 72 killed at first, 40 of the 48 survivors killed by new tests, 8 left (Known issues).
+- The owner's three step 3 leftovers are settled: D-063, D-064, D-065. Spec §9 and §22 updated; §22 also gained a line for forged placeholders, so the limit is written down.
+- On this tree, Windows only, uncommitted: 737 pass and 1 skipped of 738 in `npm test`, 129 of 129 in `claude plugin test`, typecheck and plugin typecheck clean, `claude plugin validate` passes, leak test 0 of 105 over 15 doors, 0 network attempts. macOS and Linux have not seen these changes; CI will on the next push.
+- The owner parked the hand checks and shipped. Next session needs: step 5; the hand checks stay open in Known issues.

@@ -8,12 +8,17 @@ export function joinPath(base: string, ...parts: string[]): string {
   return [base.replace(/[\\/]+$/, ''), ...parts].join(sep)
 }
 
-/** <CLAUDE_CONFIG_DIR or ~/.claude>/secret-shield: the log, the marker and (on Windows) the encrypted store. */
-export async function dataDir($: EngineInterface): Promise<string> {
+/** <CLAUDE_CONFIG_DIR or ~/.claude>. */
+export async function configDir($: EngineInterface): Promise<string> {
   const config = await $.env.get('CLAUDE_CONFIG_DIR')
-  if (config) return joinPath(config, 'secret-shield')
+  if (config) return config
   const home = (await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME'))
   // No home folder means nowhere safe to write; callers treat this as a failed write.
   if (!home) throw new Error('no home folder')
-  return joinPath(home, '.claude', 'secret-shield')
+  return joinPath(home, '.claude')
+}
+
+/** <config>/secret-shield: the log, the marker and (on Windows) the encrypted store. */
+export async function dataDir($: EngineInterface): Promise<string> {
+  return joinPath(await configDir($), 'secret-shield')
 }

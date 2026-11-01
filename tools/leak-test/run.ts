@@ -12,7 +12,7 @@ import { parseArgs } from 'node:util'
 import { pinnedVersion, resolveClaude } from './claude-bin.ts'
 import { exitCodeFor, KitError, runKit, type KitOptions } from './kit.ts'
 import { formatReport } from './report.ts'
-import { SCENARIOS } from './scenarios.ts'
+import { SCENARIOS, STORE_SCENARIOS } from './scenarios.ts'
 
 const REPO = path.join(import.meta.dirname, '..', '..')
 
@@ -49,13 +49,17 @@ function options(): { kit: KitOptions; report?: string } {
         'require-pinned': { type: 'boolean' },
         scratch: { type: 'string' },
         keep: { type: 'boolean' },
+        'allow-real-store': { type: 'boolean' },
       },
     }).values
   } catch (e) {
     usage(e instanceof Error ? e.message : 'bad arguments')
   }
   if (v.expect !== 'clean' && v.expect !== 'leaks') usage(`--expect must be clean or leaks, not ${v.expect}`)
-  const unknown = (v.only ?? []).filter(n => !SCENARIOS.some(s => s.name === n))
+  // On Windows the store is a file in the run's own folder. Elsewhere it is the machine's real one.
+  const withStore = v.expect === 'clean' && (process.platform === 'win32' || v['allow-real-store'] === true)
+  const all = withStore ? [...SCENARIOS, ...STORE_SCENARIOS] : SCENARIOS
+  const unknown = (v.only ?? []).filter(n => !all.some(s => s.name === n))
   if (unknown.length > 0) usage(`unknown scenario: ${unknown.join(', ')}`)
 
   const plugin = v['no-plugin'] ? null : path.resolve(v.plugin ?? path.join(REPO, 'plugin'))
@@ -69,7 +73,7 @@ function options(): { kit: KitOptions; report?: string } {
       claude: { ...claude, args: v['claude-arg'] ?? [] },
       plugin,
       expect: v.expect,
-      scenarios: v.only ? SCENARIOS.filter(s => v.only?.includes(s.name)) : SCENARIOS,
+      scenarios: v.only ? all.filter(s => v.only?.includes(s.name)) : all,
       pinned: pinnedVersion(),
       requirePinned: v['require-pinned'] ?? false,
       keep: v.keep ?? false,
