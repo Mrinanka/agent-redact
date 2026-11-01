@@ -4,33 +4,14 @@
 // a CI step reading the output is how the numbers get recorded.
 
 import { randomBytes, randomUUID } from 'node:crypto'
-import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { backendFor, type Exec, type Files, type StoreOS } from '../../src/core/backends.ts'
+import { nodeExec, nodeFiles, thisOS } from '../../src/backup/os.ts'
+import { backendFor } from '../../src/core/backends.ts'
 import type { Backend } from '../../src/core/store.ts'
 
-export const nodeExec: Exec = async (argv, init) => {
-  const [cmd, ...args] = argv as [string, ...string[]]
-  const r = spawnSync(cmd, args, { input: init?.stdin ?? '', encoding: 'utf8', timeout: init?.timeoutMs ?? 20_000, maxBuffer: 8 * 1024 * 1024 })
-  if (r.error) throw r.error
-  return { exitCode: r.status ?? 1, stdout: r.stdout ?? '', stderr: r.stderr ?? '' }
-}
-
-export function nodeFiles(dir: string): Files {
-  return {
-    read: async p => fs.readFileSync(p, 'utf8'),
-    write: async (p, t) => {
-      fs.mkdirSync(path.dirname(p), { recursive: true })
-      fs.writeFileSync(p, t)
-    },
-    exists: async p => fs.existsSync(p),
-    path: name => path.join(dir, `${name}.dpapi`),
-  }
-}
-
-export const thisOS = (): StoreOS => (process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux')
+export { nodeExec, nodeFiles, thisOS }
 
 const ascii = (size: number): string => randomBytes(Math.ceil(size)).toString('base64').replace(/[+/=]/g, 'A').slice(0, size)
 

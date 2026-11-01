@@ -152,7 +152,7 @@ Build in this order, testing each piece before moving on:
    - The list locked by the OS password store through `$.process` (spec 8.1, D-023; the plugin has no AES, check 0.4).
    - Aho-Corasick over the secrets and their encoded forms.
 2. **Decoder.** Decodes only what looks encoded, in pieces, at most 3 layers.
-3. **Plugin skeleton**, **settings** (three levels, "stricter only" rules, validation, admin locks; spec 14) and **log** (spec 16). Until step 5 builds it, `personal_data: on` shows "not available yet", so nobody believes it is working (D-037). The checker in `src/checker/` is copied or bundled into `plugin/` (mods import only files inside the plugin folder).
+3. **Plugin skeleton**, **settings** (three levels, "stricter only" rules, validation, admin locks; spec 14) and **log** (spec 16). Until step 5 built it, `personal_data: on` showed "not available yet", so nobody believed it was working (D-037). The checker in `src/checker/` is copied or bundled into `plugin/` (mods import only files inside the plugin folder).
 4. **Hide secrets** at `session.append`, `prompt.submit`, `prompt.context` and `prompt.attachment` (spec 5.1, D-042).
 5. **Check-failure behaviour** with `.catch` handlers (spec 12, R-03, R-12).
 6. **"I'm running" marker** (R-04).
@@ -180,10 +180,10 @@ Then **Audit 1**.
 
 1. **Settings hooks:**
    - before each tool: outbound check
-   - after each tool: clean the output where check 0.9 allows; otherwise rewrite the input before it runs
+   - after each tool: clean the output (check 0.9: the tool's own result, with its shape kept). A failed command's error is outside the limits (D-072).
    - on each prompt: block prompts with secrets
 2. **Same checker** as the main lock, run with Node.
-3. **Only act when needed.** Each hook looks for the main lock's marker and does nothing when it is there.
+3. **Only act when needed.** Each hook reads the main lock's marker first and does nothing when it says running with a fresh beat (not older than 5 minutes). A crash leaves "running" behind, so age decides (spec R-04, D-077).
 4. **Block on failure** or not, following `on_check_failure`.
 5. **Install snippets** for Personal mode (`~/.claude/settings.json`) and Managed mode.
 6. **Managed-mode run** in the Step 0 VM, starting in `observe` mode.
@@ -241,7 +241,7 @@ Targets for speed, catch rate and false alarms are set by the maintainer in Step
 | Claude Code's own records keep raw values on disk | Documented in the spec. Reported to Anthropic. |
 | Users think they're protected when hooks are disabled by policy | `doctor`, startup warning, README section (R-05) |
 | An organization can't get support | Self-verification kit, clear docs, `doctor` output in issues; support is best effort and says so |
-| Node missing on some machines | Checked in Step 0. Single-program fallback for the backup lock. |
+| Node missing on some machines | Checked in Step 0 (check 0.13). Node is required for the backup lock (D-069). The Managed snippet sets `onFailure: "block"`, so a hook that can't start stops the call; `/redact doctor` warns when Node is missing or `onFailure` is not set. A single-program build is parked (spec §23). |
 
 ---
 

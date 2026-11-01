@@ -27,7 +27,8 @@ test('the copies are byte for byte the sources: line endings included', () => {
   }
 })
 
-const sources = listFiles(plugin).filter(f => /\.(ts|tsx|js|mjs)$/.test(f) && !f.includes(`${path.sep}.claude-plugin${path.sep}`))
+// plugin/backup is the backup lock's compiled Node code, not a mod: its own guards are in tests/backup-build.test.ts.
+const sources = listFiles(plugin).filter(f => /\.(ts|tsx|js|mjs)$/.test(f) && !f.includes(`${path.sep}.claude-plugin${path.sep}`) && !f.startsWith(path.join(plugin, 'backup') + path.sep))
 
 test('the marker reports the version in plugin.json', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(plugin, '.claude-plugin', 'plugin.json'), 'utf8')) as { version: string }

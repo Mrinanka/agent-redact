@@ -42,10 +42,15 @@ export type Scenario = {
   contextHook?: string
   /** With the tool on, this door is proven by being stopped: no request, and this on stdout. */
   heldMessage?: RegExp
+  /** The same, when the backup lock is the tool: a blocked prompt is shown with the lock's own reason. */
+  heldBackup?: RegExp
   /** Saves the door's values in the real OS store first (needs --allow-real-store, except on Windows). */
   seedStore?: string
   runs: Run[]
 }
+
+/** What `claude -p` prints when the backup lock stops a prompt. */
+const BACKUP_BLOCKED = /secret-shield \(backup lock\): your message holds a secret/
 
 export const MCP_TOOL = 'mcp__leak__get_note'
 
@@ -93,11 +98,13 @@ export const SCENARIOS: Scenario[] = [
   {
     name: 'prompt-typed',
     doors: ['prompt'],
+    heldBackup: BACKUP_BLOCKED,
     runs: [{ prompt: c => `My notes:\n${c.block('prompt')}\nPlease reply.`, script: () => steps([]) }],
   },
   {
     name: 'prompt-pasted',
     doors: ['pasted'],
+    heldBackup: BACKUP_BLOCKED,
     runs: [{ prompt: () => 'Look at the pasted text and reply.', stdin: c => c.block('pasted'), script: () => steps([]) }],
   },
   {
@@ -180,6 +187,26 @@ export const SCENARIOS: Scenario[] = [
     doors: ['hook-context'],
     contextHook: 'hook-context',
     runs: [{ prompt: () => 'Reply with ok.', script: () => steps([]) }],
+  },
+]
+
+// The backup lock (spec §5.2) covers part of what the main lock does. Inside its limits a door must stay clean;
+// outside them the kit runs the door expecting every fake to be seen, so the limits list is proven, not claimed.
+export const BACKUP_INSIDE = ['prompt-typed', 'prompt-pasted', 'read-file', 'bash-output', 'bash-large', 'mcp-result', 'subagent-read']
+export const BACKUP_OUTSIDE = ['mention-file', 'bash-failed', 'compaction-summary', 'resume', 'claude-md', 'hook-context']
+
+/** The summary door alone: the backup lock cannot clean a compaction summary, and the first prompt carries no fake for it to block. */
+export const BACKUP_ONLY: Scenario[] = [
+  {
+    name: 'compaction-summary',
+    doors: ['summary'],
+    countFromRun: 1,
+    runs: [
+      { prompt: () => 'Remember: nothing in particular. Reply.', script: () => steps([]) },
+      { prompt: () => '/compact', resume: true, script: c => steps([], { summary: `Summary of the chat:
+${c.block('summary')}` }) },
+      { prompt: () => 'Reply with ok.', resume: true, script: () => steps([]) },
+    ],
   },
 ]
 

@@ -1,0 +1,55 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "<CONFIG-FOLDER>/secret-shield/backup/backup/main.js",
+              "--policy",
+              "<PATH-TO-MANAGED-SETTINGS-COPY>.json"
+            ],
+            "timeout": 30,
+            "onFailure": "block"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "<CONFIG-FOLDER>/secret-shield/backup/backup/main.js",
+              "--policy",
+              "<PATH-TO-MANAGED-SETTINGS-COPY>.json"
+            ],
+            "timeout": 30,
+            "onFailure": "block"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "<CONFIG-FOLDER>/secret-shield/backup/backup/main.js",
+              "--policy",
+              "<PATH-TO-MANAGED-SETTINGS-COPY>.json"
+            ],
+            "timeout": 30,
+            "onFailure": "block"
+          }
+        ]
+      }
+    ]
+  }
+}

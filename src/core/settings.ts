@@ -163,12 +163,6 @@ function expandLocks(names: string[]): Set<string> {
   return out
 }
 
-function notYet(s: Settings): string[] {
-  const out: string[] = []
-  if (s.personal_data === 'on') out.push('personal_data: on is not available yet; emails and phone numbers are not hidden')
-  return out
-}
-
 export function resolveSettings(sources: Partial<Record<SourceName, unknown>>, o: { lastGood?: Settings } = {}): Resolved {
   const errors: string[] = []
   const notices: string[] = []
@@ -257,13 +251,13 @@ export function resolveSettings(sources: Partial<Record<SourceName, unknown>>, o
   // Only a broken managed or user source falls back. A broken project source is left out on its
   // own: a downloaded repo must not be able to freeze the settings at an older state.
   const trustedBroken = errors.some(e => e.startsWith('policy:') || e.startsWith('user:'))
-  if (trustedBroken && o.lastGood) return { settings: o.lastGood, errors, notices: [...notices, ...notYet(o.lastGood)], ok }
-  return { settings: s, errors, notices: [...notices, ...notYet(s)], ok }
+  if (trustedBroken && o.lastGood) return { settings: o.lastGood, errors, notices, ok }
+  return { settings: s, errors, notices, ok }
 }
 
 /** What the checker is built from. Bad custom rules are refused by createChecker, with a reason (R-15). */
 export function checkerOptions(s: Settings): CheckerOptions {
-  return { off: s.rules.off, actions: s.rules.actions, custom: s.rules.custom }
+  return { off: s.rules.off, actions: s.rules.actions, custom: s.rules.custom, personalData: s.personal_data === 'on' }
 }
 
 /** Turns `allow` entries into the Redactor's form. Patterns match the whole value. */

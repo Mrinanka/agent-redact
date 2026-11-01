@@ -93,6 +93,18 @@ Tiny clarifications go under **Minor** at the bottom.
 | D-065 | Spec §9 names the tag exceptions | accepted | 4 | 9 |
 | D-066 | A guard that can't look has failed, and fails as §12 says | accepted | 4 | 10, 12, 13 |
 | D-067 | Self-protection follows links for files not there yet, and in its own roots | accepted | 4 | 17 |
+| D-068 | The backup lock runs from a stable copy that `/redact backup` makes | accepted | 5 | 5.2, 15 |
+| D-069 | Node is required for the backup lock; only the Managed snippet sets `onFailure: "block"` | accepted | 5 | 5.2, 5.3, 22, 23 |
+| D-070 | Strict: every check before a tool runs, plus self-protection and the overwrite guard | accepted | 5 | 5.2 |
+| D-071 | A letters-only value found only by a password label is not remembered | accepted | 5 | 7, 9, 22 |
+| D-072 | Failed commands are outside the backup lock's limits; no batch hook | accepted | 5 | 5.2, 22 |
+| D-073 | The mod guards skip `plugin/backup`, which has guards of its own | accepted | 5 | 5.2 |
+| D-074 | The repeated-line skip is removed | accepted | 5 | 18 |
+| D-075 | A type alias is code, and prose after a colon is left alone | accepted | 5 | 7.1, 7.2 |
+| D-076 | How the backup lock finds its settings | accepted | 5 | 5.2, 14, 22 |
+| D-077 | The marker has a `beat`; the numbers are guesses | accepted | 5 | 5.2 |
+| D-078 | The targets | accepted | 5 | 19 |
+| D-079 | Doctor finds Node by looking in the PATH folders | accepted | 5 | 15 |
 
 ## Entry template (short form, from D-018 on)
 
@@ -680,10 +692,100 @@ Tiny clarifications go under **Minor** at the bottom.
 - Rejected: Refusing every path that can't be resolved (the API's own example for an allow-list; here it would refuse each new file).
 - Evidence: `plugin/hooks/lock.test.ts`, with links simulated. A scratch run on 2.1.316 with a real Windows junction into the data folder: a Write of a new file was refused with this tool's message and nothing landed. The config-folder case is simulated only.
 
+## D-068: The backup lock runs from a stable copy that `/redact backup` makes
+- Date / Step: 2026-11-01 / 5        Status: accepted
+- Decision: `/redact backup` copies `plugin/backup/` to `<config>/secret-shield/backup/`, writes its manifest last and prints the snippet to paste. Later sessions refresh an existing copy when the manifest differs, and never create one unasked.
+- Why: The settings hooks point at a fixed path, and an installed plugin's folder can move or be replaced by an update. The owner chose the stable copy.
+- Rejected: Pointing the hooks at the plugin folder (breaks on an update, and the Managed install has no plugin path to point at); a copy made at every session start (writes files the person never asked for).
+- Evidence: `plugin/hooks/lock.test.ts` ("/redact backup copies the build ...", "a session start never creates the stable copy unasked", "refreshes an existing stale copy").
+
+## D-069: Node is required for the backup lock; only the Managed snippet sets `onFailure: "block"`
+- Date / Step: 2026-11-01 / 5        Status: accepted
+- Decision: The backup lock needs Node. The Managed snippet sets `onFailure: "block"` on all three hooks; the Personal snippet does not, and `/redact doctor` warns about it. A single-program build (no Node) is parked in spec §23, and plan.md's "single-program fallback" lines change to say so.
+- Why: Claude Code is a native binary, so Node is not guaranteed (check 0.13). Without `onFailure: "block"` a hook that cannot start is only a warning.
+- Rejected: A single-program build in this step (a second build to test on three systems); `onFailure: "block"` in the Personal snippet (a missing Node would then stop every prompt and tool call).
+- Evidence: `tests/backup-claude-real.test.ts` on 2.1.316, with a PATH that holds no program: with `onFailure: "block"` the prompt is stopped and no request is sent; without it the prompt goes through and the fake is seen by the model.
+
+## D-070: Strict means every check before a tool runs, plus self-protection and the overwrite guard
+- Date / Step: 2026-11-01 / 5        Status: accepted
+- Decision: When the main lock is not alive, the backup lock checks a tool call for saved values, shapes and labels (not only saved values, as the main lock's outbound check does), then applies self-protection and the overwrite guard. A prompt holding a secret is blocked whole, because a hook cannot hide part of one. Tool output is cleaned and keeps its shape.
+- Why: The backup lock is the last thing standing; its false alarms cost a refused call, its misses cost a leak. The owner chose strict.
+- Rejected: The main lock's outbound rule as it is (a secret that was never registered or caught passes).
+- Evidence: `tests/backup-act.test.ts`; `npm run leak-test:backup`: 0 of 49 fakes seen over 7 doors on 2.1.316.
+
+## D-071: A letters-only value found only by a password label is hidden where found, not remembered
+- Date / Step: 2026-11-01 / 5        Status: accepted
+- Decision: A finding of rule `password-label` whose value is letters only is hidden where it is found, but not added to the session's catches. A value with a digit or a symbol, or one that a format rule or a custom rule found, is remembered as before.
+- Why: A label cannot tell a password from a code word (`password: SecretString`). Remembering the word hid it through the rest of the text: with no file name, 953 of 1,010 hits were repeats of 57 values, 38 of them plain words.
+- Rejected: Not remembering any label-found value (a real password with a digit would then be hidden once only); a list of code words (never finished).
+- Cost, now in spec §22: a real letters-only password found only by its label is not hidden when it later appears without the label.
+- Evidence: `tests/tuning.test.ts`. False alarms per MB with no file name, through the pipeline: 350.28 before, 76.30 after. Catch stays 135 of 138, code set 41 of 41, twins 81 of 81.
+
+## D-072: Failed commands are outside the backup lock's limits; there is no batch hook
+- Date / Step: 2026-11-01 / 5        Status: accepted
+- Decision: The backup lock cannot clean the error of a failed command. It has no `PostToolBatch` hook. `bash-failed` goes in spec §22 as not covered, and its kit scenario runs expecting every fake to be seen.
+- Why: Spike S1 on 2.1.316. `PostToolBatch` does see a failed command's error as a string, and `decision: "block"` does stop the request. But the blocked result stays in the conversation: a follow-up prompt in the same session sent the raw error in full. `PostToolUseFailure` can only add context. So a block would delay the leak by one prompt and show a pass in a one-prompt kit run. The owner chose "outside the limits".
+- Rejected: Block anyway and document the gap (a single-turn kit run passes while a real session leaks one prompt later); a second check on the next prompt (new design, beyond the plan).
+- Evidence: the spike in `docs/findings-step0.md` Notes; `npm run leak-test:backup-limits`: `bash-failed` 7 of 7 fakes seen.
+
+## D-073: The mod guards in `tests/plugin-build.test.ts` skip `plugin/backup`; the backup has guards of its own
+- Date / Step: 2026-11-01 / 5        Status: accepted
+- Decision: `plugin/backup/` is compiled Node code, not a mod, so the guards that forbid Node, `process` and dynamic imports in the plugin skip it. `tests/backup-build.test.ts` adds stricter ones for that folder: only `node:fs`, `path`, `os`, `child_process` and `crypto`; no network module, `fetch`, `eval`, `WebAssembly` or `require`; imports stay inside the folder; the output equals what `tsc` makes from the sources.
+- Why: The plan puts the build in `plugin/backup/`, where an install carries it. The owner approved the one-line change to the existing test.
+- Rejected: Emitting the build outside `plugin/` (the install would no longer carry the backup lock).
+- Evidence: `tests/backup-build.test.ts`, `tests/plugin-build.test.ts`.
+
+## D-074: The repeated-line skip is removed
+- Date / Step: 2026-11-01 / 5        Status: accepted
+- Decision: The memory of lines already found clean is removed from the checker (`src/checker/lines.ts` is deleted). `clearLines()` stays as a function that does nothing, so no caller or test changes. Spec §18 item 5 is edited.
+- Why: The cause is confirmed: 160 of 219 rules can match across a newline (their separator classes hold `\x0A`), so only 59 rules were ever skipped. Measured warm on a 2 MB log, an empty memory took 38.2 ms and a full one 44.1 ms; on a 150 KB log, 11.9 and 12.0 ms. A safe key (the line plus the text after it) would almost never repeat. The plan said to remove it if it still gained nothing.
+- Rejected: Fixing the skip (no gain to win); keeping it (code and a cached-clean-line risk for nothing).
+- Evidence: `tests/checker-*.test.ts` (376) pass unchanged; scratch timings in `docs/progress.md` session notes.
+
+## D-075: A type alias is code, and prose after a colon is left alone
+- Date / Step: 2026-11-01 / 5        Status: accepted
+- Decision: (1) On a line that starts `type Name<...> =` (with `export` and `declare` allowed), an unquoted value is code, with no file name needed. (2) After `label:` and a space, an unquoted value of six or more lowercase letters that has a space and a letter right after it is prose (`token: signature mismatch`). Spec §7.1 and §7.2 are edited. Each has a harmless test and a twin showing a real-looking value in the same spot is hidden (R-08).
+- Why: (1) The step 2 false alarms were nearly all label hits on type aliases. (2) It was the biggest class in the log-like set. The owner said yes to (2) at the targets step.
+- Rejected: Treating a capitalised word after `label:` as a type name (a password such as `Harbor` looks the same); hiding generic hex values less (many real API keys are 32 hex characters).
+- Cost of (2): `password: summerrain admin` no longer hides `summerrain`. An unquoted multi-word YAML passphrase already leaked every word after the first.
+- Evidence: `tests/tuning.test.ts`. Log set (1.05 MB): 404.8 to 214.3 false alarms per MB; catch, code set and twins unchanged.
+
+## D-076: How the backup lock finds its settings
+- Date / Step: 2026-11-01 / 5        Status: accepted
+- Decision: It reads the user, project and local files and the managed file (`managed-settings.json`, then `managed-settings.d/*.json` in alphabetical order), plus `--policy <file>` for a managed setting delivered by MDM or from the server. The Managed snippet carries a `--policy` placeholder. A managed source it cannot read or understand makes `on_check_failure` `hold`. The levels and "stricter only" rules are the main lock's own. A `--settings` flag is not visible to a hook (spec §22).
+- Why: A hook process has no `$.settings`. A broken file from an organization is not a reason to let things through.
+- Evidence: `tests/backup-settings.test.ts`; the managed run in CI (`npm run leak-test:managed`) finds a logged notice for an unknown `secretShield` key of a real managed file.
+
+## D-077: The marker has a `beat`; the numbers are guesses
+- Date / Step: 2026-11-01 / 5        Status: accepted
+- Decision: The marker holds `{ running, started, beat, version }`. The main lock refreshes `beat` at most every 30 seconds while it is used, and writes the marker again after a worker restart. The backup lock counts a beat fresh for 5 minutes, and a beat more than 5 seconds in the future not at all. 30 seconds and 5 minutes are first guesses with no measurement behind them; if they are wrong the cost is a stricter backup lock for a while, or a few extra seconds before it acts after a crash.
+- Why: A crash leaves `running: true` behind (Known issue), so age must decide.
+- Evidence: `tests/backup-marker.test.ts`, `plugin/hooks/lock.test.ts`, `tests/backup-real.test.ts` (stand-down and the stale cases as a real program).
+
+## D-078: The targets
+- Date / Step: 2026-11-01 / 5        Status: accepted
+- Decision: Speed 1,500 ms per item through the pipeline and 500 ms median for a backup hook call; catch at least 135 of 138; code set 41 of 41, twins 81 of 81; false alarms per MB at most 6.5 (source files with a file name), 90 (no file name), 250 (log-like text). In `docs/targets.md` and `tools/measure/targets.ts`.
+- Why: Set by the owner, with headroom, from the measurements in `docs/targets.md`. CI runners on macOS and Linux were not measured.
+- Evidence: `docs/targets.md`; `tests/targets.test.ts`; `npm run measure`.
+
+## D-079: Doctor finds Node by looking in the PATH folders
+- Date / Step: 2026-11-01 / 5        Status: accepted
+- Decision: `/redact doctor` looks for `node` in each PATH folder, then runs it by its full path for the version, instead of running `node`.
+- Why: On 2.1.316, `$.process.run(["node", ...])` fails with "not found or is in an unsafe location (current directory)" when the PATH has an empty entry (the maintainer's has one, as many do), although a settings hook starts `node` from the same PATH. Doctor said "Node not found" on a machine where the backup lock ran.
+- Evidence: a scratch run of `/redact doctor` under `claude -p`, before and after.
+
+## D-080: Plan step 5 item 6 ("Managed-mode run in the Step 0 VM") is met by a managed-file run in CI
+- Date / Step: 2026-11-01 / 5        Status: proposed (needs the owner's yes)
+- Decision: Step 0 never had a VM: D-020 simulated Managed mode with a temporary managed settings file, and the VirtualBox/Docker idea was rejected there. So step 5 runs the backup lock from a real managed file the same way, in CI (`npm run leak-test:managed`, `tests/doctor-managed-real.test.ts`), on all three systems. The plan item should read "managed-file run" instead of "Step 0 VM".
+- Why: The words in the plan point at something that does not exist. The managed file run is what D-020 already chose, and it works on the other two systems, which the maintainer's PC cannot test.
+- Cost: it has not run on this PC, and "starting in observe mode" is not part of that run (it runs in safe mode). Both stay open until the first CI run is read.
+- Evidence: `docs/decision-log.md` D-020; `package.json` scripts; `.github/workflows/ci.yml`.
+
 ---
 
 ## Minor
 
+- 2026-11-01 / 5: The owner approved changing one line of `tests/core-settings.test.ts` (it expected "personal_data ... not available yet", which step 5 makes false by design, D-037). The test title above it said the setting "does nothing yet"; it was left as it was at first, because the approval was for the one line. After `/verify` the owner asked for the leftovers to be done, and the title was reworded (title only, same checks). The same went for three titles in `tests/checker-scan.test.ts` that named the removed repeated-line memory (D-074).
 - 2026-10-31: "secret-shield" is a working name. The final name is chosen in part 6.4 (no "Claude" or "Anthropic" in it).
 - 2026-10-31 / 0.0: NOTICE copyright line is "Copyright 2026 Mrinanka Dhar", with the project as "secret-shield (working name)" (renamed in 6.4).
 - 2026-10-31 / 0.0: npm, not pnpm. pnpm isn't installed and npm ships with Node.

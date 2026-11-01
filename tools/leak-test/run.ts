@@ -3,6 +3,7 @@
 //   node tools/leak-test/run.ts [--plugin <dir> | --no-plugin] [--expect clean|leaks]
 //     [--claude <path>] [--only <scenario>]... [--report <file>]
 //     [--require-pinned] [--scratch <dir>] [--keep]
+//     [--backup user|managed [--outside] [--safe-mode] [--allow-managed-file]]
 //
 // Exit codes: 0 pass, 1 leak (or a blind baseline), 2 invalid run or bad usage.
 
@@ -12,7 +13,9 @@ import { parseArgs } from 'node:util'
 import { pinnedVersion, resolveClaude } from './claude-bin.ts'
 import { exitCodeFor, KitError, runKit, type KitOptions } from './kit.ts'
 import { formatReport } from './report.ts'
-import { SCENARIOS, STORE_SCENARIOS } from './scenarios.ts'
+import { managedFile } from './managed-file.ts'
+import { managedFileContent } from './fixtures/backup-settings.ts'
+import { BACKUP_INSIDE, BACKUP_ONLY, BACKUP_OUTSIDE, SCENARIOS, STORE_SCENARIOS } from './scenarios.ts'
 
 const REPO = path.join(import.meta.dirname, '..', '..')
 
@@ -27,6 +30,11 @@ const USAGE = `usage: node tools/leak-test/run.ts [options]
   --require-pinned    fail unless Claude Code is the pinned version
   --scratch <dir>     parent folder for scratch folders
   --keep              keep scratch folders, which hold the fakes of this run
+  --backup <where>    test the backup lock (plugin/backup) instead of the plugin, run as settings hooks:
+                      user (in the user settings) or managed (in the machine's managed settings file)
+  --outside           with --backup: run the doors the backup lock does not cover, expecting every fake to be seen
+  --safe-mode         start Claude Code with --safe-mode (managed hooks still run, check 0.8)
+  --allow-managed-file  let the kit write, and remove, the machine's managed settings file (--backup managed)
 scenarios: ${SCENARIOS.map(s => s.name).join(', ')}`
 
 function usage(message: string): never {
@@ -50,15 +58,30 @@ function options(): { kit: KitOptions; report?: string } {
         scratch: { type: 'string' },
         keep: { type: 'boolean' },
         'allow-real-store': { type: 'boolean' },
+        backup: { type: 'string' },
+        outside: { type: 'boolean' },
+        'safe-mode': { type: 'boolean' },
+        'allow-managed-file': { type: 'boolean' },
       },
     }).values
   } catch (e) {
     usage(e instanceof Error ? e.message : 'bad arguments')
   }
   if (v.expect !== 'clean' && v.expect !== 'leaks') usage(`--expect must be clean or leaks, not ${v.expect}`)
+  if (v.outside && v.expect === 'clean' && process.argv.includes('--expect')) usage('--outside expects every fake to be seen; it cannot be combined with --expect clean')
   // On Windows the store is a file in the run's own folder. Elsewhere it is the machine's real one.
   const withStore = v.expect === 'clean' && (process.platform === 'win32' || v['allow-real-store'] === true)
-  const all = withStore ? [...SCENARIOS, ...STORE_SCENARIOS] : SCENARIOS
+  const backup = v.backup
+  if (backup !== undefined && backup !== 'user' && backup !== 'managed') usage(`--backup must be user or managed, not ${backup}`)
+  if (backup !== undefined && (v.plugin || !v['no-plugin'])) usage('--backup tests the backup lock alone: pass --no-plugin, and no --plugin')
+  if (backup === undefined && (v.outside || v['safe-mode'] || v['allow-managed-file'])) usage('--outside, --safe-mode and --allow-managed-file go with --backup')
+  if (backup === 'managed' && !v['allow-managed-file']) usage('--backup managed writes the managed settings file of this machine while it runs; pass --allow-managed-file to allow it')
+  if (backup === 'user' && v['allow-managed-file']) usage('--allow-managed-file goes with --backup managed')
+  const expect = v.outside ? 'leaks' : v.expect
+  const names = v.outside ? BACKUP_OUTSIDE : BACKUP_INSIDE
+  const all = backup === undefined ? (withStore ? [...SCENARIOS, ...STORE_SCENARIOS] : SCENARIOS) : [...SCENARIOS, ...BACKUP_ONLY].filter(s => names.includes(s.name))
+  const main = path.join(REPO, 'plugin', 'backup', 'backup', 'main.js')
+  if (backup !== undefined && !fs.existsSync(main)) usage('plugin/backup is not built: run npm run plugin:build')
   const unknown = (v.only ?? []).filter(n => !all.some(s => s.name === n))
   if (unknown.length > 0) usage(`unknown scenario: ${unknown.join(', ')}`)
 
@@ -72,7 +95,10 @@ function options(): { kit: KitOptions; report?: string } {
     kit: {
       claude: { ...claude, args: v['claude-arg'] ?? [] },
       plugin,
-      expect: v.expect,
+      expect,
+      ...(backup === undefined ? {} : { backup: { main, where: backup } }),
+      ...(v['safe-mode'] ? { safeMode: true } : {}),
+      ...(backup === 'managed' ? { managedFile: managedFile(managedFileContent(main)) } : {}),
       scenarios: v.only ? all.filter(s => v.only?.includes(s.name)) : all,
       pinned: pinnedVersion(),
       requirePinned: v['require-pinned'] ?? false,

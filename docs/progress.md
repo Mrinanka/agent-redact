@@ -2,7 +2,7 @@
 
 Spec: `docs/spec.md`. Plan: `docs/plan.md`. Parked work: spec §23.
 
-**Current focus:** Step 5, Backup lock + tuning (branch `step-5` from `develop`). Start with `/plan-step`. The step 4 hand checks are still open (Known issues).
+**Current focus:** Step 5, Backup lock + tuning (branch `step-5` from `develop`): built and tested on Windows, waiting for CI on the other two systems, `/verify` and `/ship`. The step 4 hand checks are still open (Known issues).
 
 ## Steps
 
@@ -34,17 +34,13 @@ Bugs, unfinished bits and open questions. Features we chose not to build go in s
 - CI's password store and Node steps print evidence but can't fail the job. A change in them only shows if someone reads the log.
 - Killing the kit mid-run, or using `--keep`, leaves a scratch folder holding that run's fakes.
 - Step 2 rejects 3 Gitleaks rules (D-032): `kubernetes-secret-yaml` stays out (D-038, spec §22); `facebook-access-token` has no required literal; `pkcs12-file` matches file names, not text.
-- Step 2 false alarms (typescript and @types/node sources, 2.9 MB): with file names 12 hidden (4.16 per MB); with no file name 175 (60.69 per MB), nearly all label hits on type aliases such as `export type DotToken = Token<...>`. That second figure applies to all Bash output, so step 5 should tune it.
+- False alarms on the typescript and @types/node sources (2.9 MB), after step 5: with file names 12 hidden (4.16 per MB); with no file name 159 (55.14 per MB), 76.30 per MB through the pipeline. What is left is TypeScript annotations such as `privateKey: KeyObject;`, a PascalCase type after a label, which looks the same as a letters-only password. The log-like set (`tools/test-sets/logs.ts`) is 214.33 per MB, 136 of 225 hits being 32-hex values after `key=` that Gitleaks' generic rule takes for API keys; many real keys look the same, so they stay. Numbers and the before/after are in `docs/targets.md`.
 - With no file name, rules with a path condition still run (D-029), so `hashicorp-tf-password` hides quoted 8 to 20 character values after `password` even in non-Terraform text.
-- Repeated-line memory is keyed by line and file name, so a repeated line across different files is checked again.
 - A hit's area is the pattern's longest match on each side of the keyword. 16 rules reach up to about 32 KB on each side, so about 64 KB per hit; many such hits are bounded by the 4 s budget (`complete: false`), which step 3 must treat as a check failure (R-12).
 - `tools/rules/sample.ts` builds random strings from patterns for tests only; they hold no fixed key.
-- The repeated-line skip shows no gain so far (2 MB log: 84 ms first scan, 86 ms repeat). Most likely cause, not confirmed: rules whose pattern can end in a newline count as spanning lines and always run. Step 5 should confirm it, then fix or drop the skip.
 - Unquoted values still end at a space, `;`, `,` or `&` (spec §7.1), so a password holding one is only partly hidden, or missed if the first part is under 6 characters. URL passwords under 6 characters, or holding `/`, are also left alone. A plain lowercase password after a `--flag` is left alone (D-034).
-- Once caught, always caught spreads a false alarm: with no file name, 953 of 1,010 hits in the false-alarm set were repeats of 57 values, 38 of them plain words, so a code word gets hidden through the rest of that text (350 per MB, against 60.69 for the checker alone; 5.55 with a file name). It hides too much, it doesn't leak. Step 5 should tune which values are remembered.
 - The truncated-key rule takes the base64 lines after a key as its body, even when the key was complete but JSON-escaped on one line, so a block after it is hidden too.
-- A crash leaves the marker at `running: true`, so the backup lock would stand down. Step 5 needs a freshness check.
-- `policy` settings are tested through mocks only. Step 5's managed run must prove a `secretShield` key in a real managed file.
+- The managed run (`npm run leak-test:managed`) and `tests/doctor-managed-real.test.ts` write the machine's managed settings file (D-020), so they run only in CI and have not run on this PC. Until the first CI run is read, "the backup lock runs in safe mode from a real managed file", "the plugin reads `policy` from a real file" and "doctor says Managed" are expected, not seen.
 - `npm run plugin:typecheck` needs the API types, which only a loaded mod or the `plugin-authoring` skill provides, so it isn't in CI. `/verify` runs it.
 - Large-paste stress runs were by hand, against the kit's mock: 2 MB each, on Windows. No kit door covers them yet.
 - A hook killed outright sends its whole row unhidden under the default `allow`, whatever the cause (D-050). Anything that can't check a deadline must be bounded by size.
@@ -55,6 +51,11 @@ Bugs, unfinished bits and open questions. Features we chose not to build go in s
 - Audit 1 ran before the last fixes. `/security-review` and `/code-review high` covered the step's code, then the too-long warning, the `constructor` fix and D-053 went in, and neither audit was run again on those. They were tested instead: 8 reverts on a scratch copy, each caught by the new tests.
 - `claude plugin validate` passes, but warns that `plugin/README.md` has no marketplace install line. That comes with the marketplace in step 6.
 
+- Step 5 (backup lock) leftovers: spike S6 (does Claude Code show a settings hook's `systemMessage` or stderr?) was only run under `claude -p`, where neither shows; the interactive terminal, VS Code and the desktop app were not checked. Node 20 as the lowest Node is a guess: the build was only run on Node 24.
+- `clearLines()` on the checker does nothing since the repeated-line memory was removed (D-074). It stays because many tests and `tools/measure/run.ts` call it; removing it is a cleanup for later. The test titles that named the memory were reworded (titles only).
+- The backup lock on Windows with saved secrets starts PowerShell for each hook that acts (about 1 s each, about 2 s per tool call while the main lock is down). A cache would put a hash or a key on disk (R-09). Reported in spec §22, not fixed.
+- A value marked harmless for one session only (`/redact allow <tag>`) is not visible to the backup lock; it may refuse what the main lock allowed (spec §22).
+
 - Step 4 was shipped with its hand checks parked by the owner, so "all commands work" is proven in hook tests and `claude -p` runs, not in a real terminal. `/redact add` and `learn` have never run in one. Still to run before release: interactive `/resume` at `prompt.submit`, the add and learn panes, the `outbound: ask` dialog, the observe band, and whether `/redact` survives `/clear` (it is registered again when the session id changes, unproven interactively).
 - `tests/media-real.test.ts` skips where the pinned Claude Code isn't installed, so CI's test job may skip it. It ran on Windows only (4 of 4).
 - 8 of 120 mutants still survive. Same behaviour, so nothing to test: the `.env` byte order mark (the line pattern's `\s` takes it) and the mention's 8 MiB limit (`$.fs.read` refuses over 4 MiB anyway). Only reachable by running out of time, with no seam to force it: `complete` in `checkOverwrite` once a secret is found, and the "ran out of time" lines in the guard and the mention. Small and untested: a `warn` rule's filter in outbound, the `@` folder early return (the stand-in's read answers where the engine's rejects), and `learnValues.clear()` after a save (values stay in the worker's memory until the next `learn`).
@@ -62,7 +63,7 @@ Bugs, unfinished bits and open questions. Features we chose not to build go in s
 - After a mistaken `/redact add <value>`, a scratch run with masking showed the value gone from the next request but still in the transcript file; the real plugin's run found it in no file. The difference wasn't traced, so the message still says to rotate.
 - The `@` copy's path holds `secret-shield`, so the model can tell it is a copy. Its Read of the real file is hidden, so nothing leaks.
 - A failed store read can take 20 s, and the retry runs inside a hook, so that row waits.
-- Doctor can't see the plugin's tier, and "Managed" is read from the managed settings holding our key or `enabledPlugins`. Step 5's managed run should check it.
+- Doctor can't see the plugin's tier, and "Managed" is read from the managed settings holding our `secretShield` or `enabledPlugins` key. `tests/doctor-managed-real.test.ts` checks that against a real managed file in CI.
 - `--always` on a value whose store save fails stays harmless for the session only, and says so.
 
 - With a failed store read, rows go through with only the shape checks until a retry works, under the default `allow`: a saved secret with no shape is sent, with a warning. Seen on CI when PowerShell took over 20 s in a cut-down environment; a normal environment read in about 0.2 s (D-045).
@@ -115,6 +116,12 @@ Platform and tooling facts learned so far (from the old `lessons.md`).
 - `$.fs.read` rejects a file over 4 MiB, so a `try` around it can turn a big file into an empty one.
 - A `.catch` on a stream is different: `next` there opens a new stream, so `turn.step`'s would send the request again. Throw instead.
 - A review finding pasted into a new session only carries what was pasted. Two "record it" items from one session never reached the docs that way.
+
+- A test or script that starts `claude` from the same Node process that runs the mock API must use async `spawn`: `spawnSync` blocks the event loop, so the mock never answers and the run hangs until its timeout. Also pass `stdio: ['ignore', ...]`, or `claude -p` waits on stdin.
+- `$.process.run(["node", ...])` refuses a PATH with an empty entry ("unsafe location (current directory)"), though a settings hook starts `node` from it. Look through the PATH folders instead (D-079).
+- A blocked prompt is echoed back on screen under `claude -p` (spike S4), and a hook's `systemMessage` and stderr show nowhere there (S6). A kit run reads a block from stdout, and a warning is only in the log.
+- The backup lock's log is `<date>-<session>.backup.jsonl`, a file of its own beside the main lock's, and it holds one JSON object per line, so a text search for a quoted value must parse the line (the managed proof does).
+- A deep tool-response value, a 4 MiB text and a 16 MiB stdin each have a limit in the backup lock; a test for a limit needs a value past it, not near it.
 
 ## Session notes
 
@@ -178,3 +185,12 @@ Newest last, 3–5 lines each: what exists now and what the next session needs.
 - The owner's three step 3 leftovers are settled: D-063, D-064, D-065. Spec §9 and §22 updated; §22 also gained a line for forged placeholders, so the limit is written down.
 - On this tree, Windows only, uncommitted: 737 pass and 1 skipped of 738 in `npm test`, 129 of 129 in `claude plugin test`, typecheck and plugin typecheck clean, `claude plugin validate` passes, leak test 0 of 105 over 15 doors, 0 network attempts. macOS and Linux have not seen these changes; CI will on the next push.
 - The owner parked the hand checks and shipped. Next session needs: step 5; the hand checks stay open in Known issues.
+
+### 2026-11-01: step 5 (backup lock and tuning)
+- Spikes S1 to S6 first (findings, Notes). S1 changed the plan: a batch-hook block only delays the leak by one prompt, so failed commands are outside the backup lock's limits (D-072) and there are three hooks, not four. S4: a blocked prompt is echoed on screen under `claude -p`. The Bash tool on this PC still breaks a heredoc holding a backslash or an apostrophe, and a Node script run through one: a backslash escape such as the newline one or the digit one came out wrong more than once. Write files with the Write tool or edit with Edit.
+- New: `src/backup/` (marker, scrub, settings, act, run, main, os), compiled to `plugin/backup/` by `npm run plugin:build` (tsc as a command; a manifest with a SHA-256 per file). `plugin/hooks/backup-copy.ts` (`/redact backup`, refresh at start, doctor and status lines), the marker `beat`, `src/core/snippet.ts` with `docs/snippets/personal.json` and `managed.json`. `src/checker/personal.ts` (`personal_data`). Kit: `--backup user|managed`, `--outside`, `--safe-mode`, `--allow-managed-file`; `tools/test-sets/logs.ts`; `tools/measure/targets.ts`; `docs/targets.md`.
+- Tuning (D-071, D-074, D-075): false alarms with no file name through the pipeline 350.28 to 76.30 per MB; log-like text 404.8 to 214.33; catch 135 of 138, code set 41 of 41 and twins 81 of 81 unchanged. The repeated-line skip is gone (D-074).
+- Decisions D-068 to D-079. Approved by the owner: the plugin-guard exclusion (D-073), the prose rule and the targets (D-075, D-078), the one-line change in `tests/core-settings.test.ts`.
+- On this Windows PC: `npm test`, the typecheck, the plugin typecheck, `plugin:build --check`, `claude plugin test` and `measure` pass; `leak-test:backup` 0 of 49 fakes seen over 7 doors, `leak-test:backup-limits` 42 of 42 seen over 6 doors (the limits, proven). The managed run needs the machine's managed settings file and is for CI. macOS and Linux have not seen any of this yet.
+- 15 mutants on the new backup, tuning and personal-data code (marker age, the skew, the prompt block, self-protection, the outbound check, hold, the shape of cleaned output, the size cap, a broken managed file, drop-in order, stand-down, D-071, the type alias rule, the prose rule, the `git@` skip): all killed.
+- Next: push a wip so CI runs the managed leg on 3 OSes and prints the macOS and Linux numbers, then `/verify`, then `/ship`.

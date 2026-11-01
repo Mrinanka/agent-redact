@@ -5,11 +5,15 @@
 //   4. false alarms per MB, by rule
 //   5. speed per item, under Node
 //   6. the same through the whole pipeline: matcher, checker and decoder (step 3)
+//   7. false alarms on log-like text, by rule (step 5)
 // Exits 1 if an automated "done when" fails, so CI notices. Prints labels and
 // counts only, never a value.
 
 import path from 'node:path'
 import fs from 'node:fs'
+import os from 'node:os'
+import { spawnSync } from 'node:child_process'
+import { TARGETS } from './targets.ts'
 import { createChecker } from '../../src/checker/index.ts'
 import { NO_ALLOW, Redactor } from '../../src/core/session.ts'
 import type { SecretEntry } from '../../src/core/store.ts'
@@ -17,6 +21,7 @@ import { REJECTIONS, RULES, BUILD_WARNINGS, GITLEAKS_VERSION } from '../../src/c
 import { catchSet, type CatchCase } from '../test-sets/catch.ts'
 import { codeSet } from '../test-sets/code.ts'
 import { falseAlarmFiles } from '../test-sets/false-alarm.ts'
+import { logFiles } from '../test-sets/logs.ts'
 import { speedSet } from '../test-sets/speed.ts'
 
 const root = path.join(import.meta.dirname, '..', '..')
@@ -105,6 +110,7 @@ for (const c of cs) {
   }
 }
 console.log(`left alone ${left}/${cs.length}; twins hidden ${twins}/${cs.reduce((n, c) => n + (c.id === 'documented-example-key' ? 1 : real.length), 0)}`)
+if (twins !== TARGETS.twinsHidden) fail(`twins hidden ${twins}, target ${TARGETS.twinsHidden}`)
 
 // ---- 4. false alarms ----------------------------------------------------------------------
 
@@ -162,11 +168,14 @@ const missedAll = cases.filter(c => {
 console.log(`catch set: ${cases.length - missedAll.length}/${cases.length} ${pct(cases.length - missedAll.length, cases.length)}`)
 if (missedAll.length > 0) console.log(`not caught: ${missedAll.map(c => c.id).join(', ')}`)
 for (const c of missedAll) if (!SHAPELESS.has(c.id)) fail(`${c.id} was not caught`)
+if (cases.length !== TARGETS.catchOf) fail(`the catch set has ${cases.length} cases, not ${TARGETS.catchOf}`)
+if (cases.length - missedAll.length < TARGETS.catchAtLeast) fail(`catch ${cases.length - missedAll.length}/${cases.length} is below the target ${TARGETS.catchAtLeast}`)
 
 let codeLeft = 0
 for (const c of cs) if (redactor().redactText(c.text, { deadline: deadline() }).hits.length === 0) codeLeft++
 console.log(`code set: left alone ${codeLeft}/${cs.length}`)
 if (codeLeft !== cs.length) fail('the pipeline hid harmless code')
+if (codeLeft !== TARGETS.codeLeftAlone) fail(`code set left alone ${codeLeft}, target ${TARGETS.codeLeftAlone}`)
 
 for (const withFile of [true, false]) {
   let bytes = 0
@@ -178,6 +187,39 @@ for (const withFile of [true, false]) {
   }
   const mb = bytes / (1024 * 1024)
   console.log(`false alarms ${withFile ? 'with the file name' : 'with no file name'}: ${hidden} hidden (${(hidden / mb).toFixed(2)} per MB)`)
+  const limit = withFile ? TARGETS.falseAlarmsPerMb.sourceWithFile : TARGETS.falseAlarmsPerMb.sourceNoFile
+  if (hidden / mb > limit) fail(`false alarms ${withFile ? 'with' : 'with no'} file name: ${(hidden / mb).toFixed(2)} per MB is over the target ${limit}`)
+}
+
+// ---- 7. log-like text ------------------------------------------------------------------------
+
+console.log('\n== 7. False alarms per MB on log-like text (access, app and JSON logs, traces, git output, ids) ==')
+const logs = logFiles()
+{
+  const counts = new Map<string, number>()
+  let bytes = 0
+  let hidden = 0
+  let emails = 0
+  let phones = 0
+  for (const f of logs) {
+    bytes += Buffer.byteLength(f.text)
+    const r = checker.scan(f.text, { file: f.name })
+    for (const x of r.findings) counts.set(x.ruleId, (counts.get(x.ruleId) ?? 0) + 1)
+    hidden += redactor().redactText(f.text, { deadline: deadline(), file: f.name }).hits.length
+    for (const x of createChecker({ personalData: true }).checker.scan(f.text, { file: f.name }).findings) {
+      if (x.ruleId === 'personal-email') emails++
+      if (x.ruleId === 'personal-phone') phones++
+    }
+  }
+  const mb = bytes / (1024 * 1024)
+  const total = [...counts.values()].reduce((a, b) => a + b, 0)
+  console.log(`checker alone: ${logs.length} files, ${mb.toFixed(2)} MB, ${total} hidden (${(total / mb).toFixed(2)} per MB)`)
+  for (const [id, n] of [...counts].sort((a, b) => b[1] - a[1])) console.log(`  ${id.padEnd(28)} ${n} (${(n / mb).toFixed(2)} per MB)`)
+  console.log(`through the whole pipeline: ${hidden} hidden (${(hidden / mb).toFixed(2)} per MB)`)
+  if (hidden / mb > TARGETS.falseAlarmsPerMb.logs) fail(`log false alarms ${(hidden / mb).toFixed(2)} per MB is over the target ${TARGETS.falseAlarmsPerMb.logs}`)
+  // The set holds git author addresses (name@users.noreply.github.com), which are addresses, and no phone number.
+  console.log(`personal_data on: ${emails} email addresses (the git author lines) and ${phones} phone numbers found`)
+  if (phones > 0) fail(`personal_data found ${phones} phone numbers in log text that holds none`)
 }
 
 const speedItems: { id: string; text: () => string; registered?: string[] }[] = [
@@ -196,7 +238,35 @@ for (const item of speedItems) {
   const took = performance.now() - t0
   console.log(`  ${item.id.padEnd(38)} ${(text.length / 1024).toFixed(0).padStart(6)} KB  ${ms(took).padStart(11)}  hits ${String(out.hits.length).padStart(6)}  complete ${out.complete}${item.registered ? `  (built in ${ms(buildMs)})` : ''}`)
   if (took > BUDGET_MS + 1000) fail(`${item.id} ran past its deadline`)
+  if (took > TARGETS.pipelineMs) fail(`${item.id} took ${took.toFixed(0)} ms, over the target ${TARGETS.pipelineMs} ms`)
   if (!out.complete) fail(`${item.id} did not finish`)
+}
+
+// ---- 8. the backup lock as a program -----------------------------------------------------------------
+
+console.log('\n== 8. The backup lock: a cold Node process handling one small event ==')
+{
+  const main = path.join(root, 'plugin', 'backup', 'backup', 'main.js')
+  if (!fs.existsSync(main)) fail('plugin/backup is not built: run npm run plugin:build')
+  else {
+    const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'measure-backup-'))
+    try {
+      const times: number[] = []
+      for (let i = 0; i < 9; i++) {
+        const input = JSON.stringify({ hook_event_name: 'PreToolUse', session_id: 'measure', cwd: cfg, tool_name: 'Bash', tool_input: { command: 'npm test' } })
+        const t0 = performance.now()
+        const r = spawnSync(process.execPath, [main], { input, encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg } })
+        times.push(performance.now() - t0)
+        if (r.status !== 0) fail(`the backup lock exited ${r.status}`)
+      }
+      times.sort((a, b) => a - b)
+      const median = times[Math.floor(times.length / 2)] as number
+      console.log(`  median ${median.toFixed(0)} ms, slowest ${(times[times.length - 1] as number).toFixed(0)} ms (target: median under ${TARGETS.backupHookMs} ms)`)
+      if (median > TARGETS.backupHookMs) fail(`the backup lock median ${median.toFixed(0)} ms is over the target ${TARGETS.backupHookMs} ms`)
+    } finally {
+      fs.rmSync(cfg, { recursive: true, force: true })
+    }
+  }
 }
 
 console.log(failed ? '\nmeasure: FAILED' : '\nmeasure: ok')
