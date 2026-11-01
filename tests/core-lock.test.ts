@@ -8,7 +8,7 @@ import { now } from '../src/core/decoder.ts'
 import { NO_ALLOW, Redactor } from '../src/core/session.ts'
 import { base64Encode, utf8 } from '../src/core/forms.ts'
 import { isChecked, outboundText, outboundVerdict } from '../src/core/outbound.ts'
-import { checkOverwrite, placeholdersIn } from '../src/core/guard.ts'
+import { applyEdit, checkOverwrite, placeholdersIn } from '../src/core/guard.ts'
 import { blockedSettingsChange, isProtected, isSettingsFile, normalize, shellChangesProtected, type Roots } from '../src/core/protect.ts'
 import { MAX_REGISTERED, MIN_REGISTERED, parseEnv, startsTicked, validRegistered } from '../src/core/envfile.ts'
 import { isTested, versionWarning } from '../src/core/versions.ts'
@@ -271,4 +271,72 @@ test('a broken checker makes the self-check fail, not crash', () => {
     throw new Error('no')
   })
   assert.ok(results.some(r => !r.pass))
+})
+
+// ---- found by mutation checks ------------------------------------------------------------------
+
+const GH2 = ['ghp', 'Zx8Vb2NmLk4JhGf6DsAq1WeRt9YuIo3PaSdF'].join('_')
+const place = (r: Redactor, text: string): string => r.redactText(text, { deadline: later() }).text
+
+test('applyEdit: an empty old string does nothing, one edit changes the first, replace_all every one, and $ stays literal', () => {
+  assert.equal(applyEdit('abc', '', 'x', false), undefined)
+  assert.equal(applyEdit('a a', 'a', 'b', false), 'b a')
+  assert.equal(applyEdit('a a', 'a', 'b', true), 'b b')
+  assert.equal(applyEdit('a', 'a', '$&$&', false), '$&$&')
+})
+
+test('the guard: a placeholder already in the file does not count as losing a secret', () => {
+  const r = redactor()
+  const old = place(r, GH)
+  const fresh = redactor()
+  fresh.redactText(`x ${GH2}`, { deadline: later() })
+  const disk = `a=${old}\nb=${GH2}\n`
+  assert.equal(checkOverwrite(fresh, { path: 'a.env', disk, after: `a=${old}\n`, deadline: later() }).blocked, false)
+})
+
+test('the guard: the placeholder of a different known value of the same kind does not count', () => {
+  const r = redactor()
+  const other = place(r, GH2)
+  r.redactText(`seen ${GH}`, { deadline: later() })
+  assert.equal(checkOverwrite(r, { path: 'a.env', disk: `a=${GH}\n`, after: `a=${other}\n`, deadline: later() }).blocked, false)
+})
+
+test('the guard: a rule set to warn hides nothing, so nothing is lost', () => {
+  const r = new Redactor({ checker: createChecker({ actions: { 'github-pat': 'warn' } }).checker, registered: [], hints: true, allow: NO_ALLOW })
+  const held = redactor()
+  const seen = place(held, GH)
+  assert.equal(checkOverwrite(r, { path: 'a.env', disk: `a=${GH}\n`, after: `a=${seen}\n`, deadline: later() }).blocked, false)
+})
+
+test('the guard says when its check did not finish', () => {
+  assert.equal(checkOverwrite(redactor(), { path: 'a.env', disk: `a=${GH}\n`, after: 'b', deadline: now() - 1 }).complete, false)
+})
+
+test('a shell command naming a kill switch and settings is refused', () => {
+  const roots: Roots = { own: ['/data'], config: '/cfg', caseless: false }
+  assert.equal(shellChangesProtected(`node -e "update('settings', 'disableAllHooks')"`, roots), 'Claude Code settings')
+})
+
+test('parseEnv skips a byte order mark', () => {
+  assert.equal(parseEnv('﻿API_KEY=abc')[0]?.key, 'API_KEY')
+})
+
+test('startsTicked: a value that can not be saved, or a rule that only warns, starts unticked', () => {
+  assert.equal(startsTicked(createChecker({}).checker, 'PASSWORD', 'Kq7'.repeat(3000)), false)
+  assert.equal(startsTicked(createChecker({ actions: { 'github-pat': 'warn' } }).checker, 'NOTE', GH), false)
+})
+
+test('allowing a value gives its room in the catch list back', () => {
+  const r = new Redactor({ checker: createChecker({}).checker, registered: [], hints: true, allow: NO_ALLOW, maxCatchChars: 40 })
+  const tag = (r.redactText(GH, { deadline: later() }).hits[0] as { tag: string }).tag
+  r.allowTag(tag)
+  r.redactText(GH2, { deadline: later() })
+  assert.equal(r.findKnown(`x ${GH2} y`, later()).hits.length, 1)
+})
+
+test('the self-check fails when the checker finds nothing', () => {
+  const results = runSelfCheck(() => ({ scan: () => ({ findings: [], complete: true }) }) as never)
+  const failed = results.filter(x => !x.pass).map(x => x.name)
+  assert.ok(failed.includes('a known key format is hidden'))
+  assert.ok(failed.includes('the same value gets the same tag'))
 })

@@ -27,6 +27,7 @@ export async function checkMention($: EngineInterface, path: string): Promise<Me
   if (MEDIA.test(path)) {
     return rt.settings.media === 'drop' && !observe ? { deny: 'secret-shield: the media setting is drop, so this file was not attached.' } : 'as-is'
   }
+  if (!(await $.fs.exists(path))) return 'as-is' // the engine says so itself
   const stat = await $.fs.stat(path)
   if (stat.kind !== 'file') return 'as-is'
   if (stat.size > MAX_BYTES) throw new Error('too large')

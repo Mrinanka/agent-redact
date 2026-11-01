@@ -323,6 +323,12 @@ export async function stillRunning($: EngineInterface): Promise<void> {
 
 let commandsFor: string | undefined
 
+/** A failed hook that guards a call rather than a row (R-12): the log says what really happened. */
+export async function failedGate($: EngineInterface, door: string, what: string, kind: string, held: boolean): Promise<void> {
+  warn($, `failure-${kind}`, `a check failed (${kind}) on ${what}. ${held ? 'It was stopped.' : 'It went ahead unchecked.'}`)
+  await logFailure($, door, door, kind, held)
+}
+
 export async function failedLifecycle($: EngineInterface, door: string, kind: string): Promise<void> {
   warn($, `failure-${door}`, `could not finish its ${door} step (${kind}); hiding carries on`)
   await logFailure($, door, door, kind, false)

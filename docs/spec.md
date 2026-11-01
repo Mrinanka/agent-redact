@@ -4,7 +4,7 @@ An open-source tool that stops secrets from reaching the model when developers u
 
 - **Status:** draft.
 - **License:** Apache-2.0.
-- **Last updated:** 1 November 2026 (step 4, D-055 to D-060).
+- **Last updated:** 1 November 2026 (step 4, D-055 to D-060, D-063 to D-065).
 - **Maintainer:** (your name)
 
 **How to read this spec.** Requirements a build must meet have an ID (`R-01`) and the word **must**. Tests in `plan.md` point to these IDs. **Should** means strongly recommended but not release-blocking. Facts about Claude Code were checked on a real machine in Step 0; the evidence is in `docs/findings-step0.md`, and a check number (`0.4`) points to its row.
@@ -225,7 +225,7 @@ A placeholder in place of each secret, for example:
 
 - **Label:** what kind of secret it was.
 - **Last 4 characters:** only for secrets of 12 or more characters, and never for password-label values (check 2). Setting `hints: off` removes them.
-- **Random tag:** 13 base32 characters, which is 65 random bits from a secure source. The same secret gets the same tag within a session, including in subagents. Two different secrets never share a tag.
+- **Random tag:** 13 base32 characters, which is 65 random bits from a secure source. The same secret gets the same tag within a session, including in subagents. The rare exception is a restart of the hidden checks mid-session: a value that could not be saved for it, because it is over 8,192 characters (D-052) or didn't fit in the saved list (D-053), gets a new tag. Nothing is revealed. Two different secrets never share a tag.
 
 The placeholder note added to Claude's instructions says:
 - These are hidden values.
@@ -430,6 +430,8 @@ The maintainers can't test inside every organization. So everything needed to te
 - **Observe mode** hides nothing, by design.
 - **Bare values in base64.** A value with no shape and no label is found once it is decoded only if it has a shape, was registered, or was caught earlier. The catch set has 3 such cases (D-046).
 - **Very long values.** A value over 8,192 characters isn't remembered (D-052). It is hidden, or blocked, wherever its shape or label is found, but a copy with neither is neither hidden nor blocked, even later in the same text. The person is warned once.
+- **A full catch list.** What was caught this session is remembered up to 5,000 values and 100,000 characters (D-052, D-063). One large file of token-like text can fill that. After it fills, a new secret is still hidden where its shape or label is found, but a bare copy of it later is not, unless it was registered. The person is warned once.
+- **Text shaped like a placeholder.** The tool leaves its own placeholder shape alone, so a secret written inside that shape reaches the model and skips a `block` rule. The value has to fit the shape, so it works for one made of capitals and digits, such as an AWS key ID, and not for a mixed-case token. It only happens on purpose, but a prompt injection can cause it, as it can with `rev` (section 3). A bare copy is hidden as usual if the value has a shape, is registered or was caught (D-064).
 - **Kubernetes Secret files.** The Gitleaks rule for them is left out (D-038). A value under a key named like a password is still hidden. Others are not: `.dockerconfigjson` registry credentials, or a connection string under a key like `dbconn`.
 - **Shell commands and self-protection.** The check on Bash and PowerShell reads the command's text, so a disguised command gets past it (D-055).
 - **A value typed after a command.** With the hooks off, `/redact add <value>` is an ordinary prompt and reaches the model. With them on it is refused and taken off the row, but it was still typed: rotate it (D-057).

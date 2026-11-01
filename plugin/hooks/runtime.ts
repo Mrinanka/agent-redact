@@ -58,12 +58,13 @@ async function readSources($: EngineInterface): Promise<{ sources: Partial<Recor
   return { sources, unreadable }
 }
 
-/** Settings from the files alone, with no checker: for a `.catch`, which has one second. */
+/** Settings from the files alone, with no checker: for a `.catch`, which has one second. Observe holds nothing (spec §13). */
 export async function failureMode($: EngineInterface): Promise<'allow' | 'hold'> {
-  if (current) return current.settings.on_check_failure
+  const held = (s: Settings): 'allow' | 'hold' => (s.mode === 'observe' ? 'allow' : s.on_check_failure)
+  if (current) return held(current.settings)
   try {
     const { sources } = await readSources($)
-    return resolveSettings(sources).settings.on_check_failure
+    return held(resolveSettings(sources).settings)
   } catch {
     return DEFAULTS.on_check_failure
   }

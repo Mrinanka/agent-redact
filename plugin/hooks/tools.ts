@@ -23,25 +23,33 @@ const text = (v: unknown): string => (typeof v === 'string' ? v : '')
 /** The file a writing tool names, or nothing for any other tool. */
 const pathOf = (tool: string, e: Input): string | undefined => (tool === 'Write' || tool === 'Edit' ? text(e.file_path) : tool === 'NotebookEdit' ? text(e.notebook_path) : undefined)
 
+/**
+ * Where a path lands, links followed. A file not there yet lands where its nearest existing folder does,
+ * because a Write creates what is missing.
+ */
+async function landing($: EngineInterface, path: string): Promise<string> {
+  let at = path
+  let rest = ''
+  for (;;) {
+    const real = (await $.fs.stat(at, { resolve: true }).catch(() => undefined))?.realPath
+    if (real !== undefined) return `${real.replace(/[\\/]$/, '')}${rest}`
+    const cut = Math.max(at.lastIndexOf('/'), at.lastIndexOf('\\'))
+    if (cut <= 0) return path
+    rest = `/${at.slice(cut + 1)}${rest}`
+    at = at.slice(0, cut)
+  }
+}
+
+/** Each root in both spellings, because a path's landing has its links followed and the root may hold one. */
 export async function rootsOf($: EngineInterface): Promise<Roots> {
   const os = await osOf($)
-  return { own: [await dataDir($), $.plugin.root], config: await configDir($), caseless: os !== 'linux' }
+  const own = [await dataDir($), $.plugin.root]
+  return { own: [...own, ...(await Promise.all(own.map(r => landing($, r))))], config: await configDir($), caseless: os !== 'linux' }
 }
 
+/** A file that is there and can't be read rejects: the caller's check has failed (R-12), it hasn't passed. */
 async function readIfThere($: EngineInterface, path: string): Promise<string> {
-  try {
-    return (await $.fs.exists(path)) ? String(await $.fs.read(path)) : ''
-  } catch {
-    return ''
-  }
-}
-
-async function landing($: EngineInterface, path: string): Promise<string> {
-  try {
-    return (await $.fs.stat(path, { resolve: true })).realPath ?? path
-  } catch {
-    return path
-  }
+  return (await $.fs.exists(path)) ? String(await $.fs.read(path)) : ''
 }
 
 async function logEvent($: EngineInterface, rt: Runtime, event: 'block' | 'warn' | 'notice', where: string, detail: string, tag?: string): Promise<void> {
@@ -58,7 +66,7 @@ async function protect($: EngineInterface, rt: Runtime, tool: string, e: Input):
   if (path) {
     const real = await landing($, path)
     if (isProtected(path, roots) || isProtected(real, roots)) return "that file belongs to secret-shield, and Claude can't change it"
-    if (isSettingsFile(path, roots) || isSettingsFile(real, roots)) {
+    if (isSettingsFile(path, roots) || isSettingsFile(real, { ...roots, config: await landing($, roots.config) })) {
       const before = await readIfThere($, path)
       const after = tool === 'Write' ? text(e.content) : applyEdit(before, text(e.old_string), text(e.new_string), e.replace_all === true)
       const key = after === undefined ? undefined : blockedSettingsChange(before, after)
