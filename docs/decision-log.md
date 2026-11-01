@@ -105,6 +105,7 @@ Tiny clarifications go under **Minor** at the bottom.
 | D-077 | The marker has a `beat`; the numbers are guesses | accepted | 5 | 5.2 |
 | D-078 | The targets | accepted | 5 | 19 |
 | D-079 | Doctor finds Node by looking in the PATH folders | accepted | 5 | 15 |
+| D-080 | Plan step 5 item 6 is met by a managed-file run in CI, not a Step 0 VM | accepted | 5 | 19 |
 
 ## Entry template (short form, from D-018 on)
 

@@ -2,7 +2,7 @@
 
 Spec: `docs/spec.md`. Plan: `docs/plan.md`. Parked work: spec §23.
 
-**Current focus:** Step 5, Backup lock + tuning (branch `step-5` from `develop`): built and tested on Windows, waiting for CI on the other two systems, `/verify` and `/ship`. The step 4 hand checks are still open (Known issues).
+**Current focus:** Step 6, Release + Audit 2 (branch `step-6` from `develop`, after step 5 is merged). Run `/security-review` and `/code-review high` before `/ship`. The hand checks still open are in Known issues (VS Code, desktop app, `outbound: ask`, interactive display).
 
 ## Steps
 
@@ -13,7 +13,7 @@ Spec: `docs/spec.md`. Plan: `docs/plan.md`. Parked work: spec §23.
 | 2 | Checker | `step-2` | ☑ |
 | 3 | Core hiding + Audit 1 | `step-3` | ☑ |
 | 4 | Rest of the main lock | `step-4` | ☑ |
-| 5 | Backup lock + tuning | `step-5` | ☐ |
+| 5 | Backup lock + tuning | `step-5` | ☑ |
 | 6 | Release + Audit 2 | `step-6` | ☐ |
 
 "Done when" for each step is in `docs/plan.md`, "The 7 steps".
@@ -51,7 +51,7 @@ Bugs, unfinished bits and open questions. Features we chose not to build go in s
 - Audit 1 ran before the last fixes. `/security-review` and `/code-review high` covered the step's code, then the too-long warning, the `constructor` fix and D-053 went in, and neither audit was run again on those. They were tested instead: 8 reverts on a scratch copy, each caught by the new tests.
 - `claude plugin validate` passes, but warns that `plugin/README.md` has no marketplace install line. That comes with the marketplace in step 6.
 
-- Step 5 (backup lock) leftovers: spike S6 (does Claude Code show a settings hook's `systemMessage` or stderr?) was only run under `claude -p`, where neither shows; the interactive terminal, VS Code and the desktop app were not checked. Node 20 as the lowest Node is a guess: the build was only run on Node 24.
+- Step 5 (backup lock) leftovers: spike S6 (does Claude Code show a settings hook's `systemMessage` or stderr?) was run under `claude -p`, where neither shows, and by hand in the interactive terminal, where a blocked prompt does show ("UserPromptSubmit operation blocked by hook: secret-shield (backup lock) ..."). VS Code and the desktop app were not checked. Node 20 as the lowest Node is a guess: the build was only run on Node 24.
 - `clearLines()` on the checker does nothing since the repeated-line memory was removed (D-074). It stays because many tests and `tools/measure/run.ts` call it; removing it is a cleanup for later. The test titles that named the memory were reworded (titles only).
 - The backup lock on Windows with saved secrets starts PowerShell for each hook that acts (about 1 s each, about 2 s per tool call while the main lock is down). A cache would put a hash or a key on disk (R-09). Reported in spec §22, not fixed.
 - A value marked harmless for one session only (`/redact allow <tag>`) is not visible to the backup lock; it may refuse what the main lock allowed (spec §22).
@@ -125,6 +125,11 @@ Platform and tooling facts learned so far (from the old `lessons.md`).
 - A blocked prompt is echoed back on screen under `claude -p` (spike S4), and a hook's `systemMessage` and stderr show nowhere there (S6). A kit run reads a block from stdout, and a warning is only in the log.
 - The backup lock's log is `<date>-<session>.backup.jsonl`, a file of its own beside the main lock's, and it holds one JSON object per line, so a text search for a quoted value must parse the line (the managed proof does).
 - A deep tool-response value, a 4 MiB text and a 16 MiB stdin each have a limit in the backup lock; a test for a limit needs a value past it, not near it.
+- `claude --safe-mode` starts no MCP servers (its help says so), so an MCP door has no witness in a safe-mode run and the kit calls it INVALID. The managed safe-mode script runs the other six doors.
+- `Read`, `Write`, `Edit`, `NotebookEdit` and the task tools are local tools that `outbound` does not check (`LOCAL_TOOLS`, `src/core/outbound.ts`). To see the `outbound` dialog by hand, a Bash, WebFetch or connected-tool call must carry a token the model wrote itself; models refuse a split-token prompt.
+- In the interactive terminal, Claude Code echoes a prompt the backup lock blocked in full ("Original prompt: ..."), so the blocked secret is on screen and may reach its transcript.
+- Under `claude plugin test`, a pane stays mounted after the plugin closes it: `unmount()` it before mounting the same pane again.
+- Slash-command text and `$.ui.log` lines get a `secret-shield:` prefix from the display, so any message that starts with it shows it twice. Changing it also changes toasts and warnings (`warn.ts`).
 
 ## Session notes
 
@@ -190,10 +195,8 @@ Newest last, 3–5 lines each: what exists now and what the next session needs.
 - The owner parked the hand checks and shipped. Next session needs: step 5; the hand checks stay open in Known issues.
 
 ### 2026-11-01: step 5 (backup lock and tuning)
-- Spikes S1 to S6 first (findings, Notes). S1 changed the plan: a batch-hook block only delays the leak by one prompt, so failed commands are outside the backup lock's limits (D-072) and there are three hooks, not four. S4: a blocked prompt is echoed on screen under `claude -p`. The Bash tool on this PC still breaks a heredoc holding a backslash or an apostrophe, and a Node script run through one: a backslash escape such as the newline one or the digit one came out wrong more than once. Write files with the Write tool or edit with Edit.
-- New: `src/backup/` (marker, scrub, settings, act, run, main, os), compiled to `plugin/backup/` by `npm run plugin:build` (tsc as a command; a manifest with a SHA-256 per file). `plugin/hooks/backup-copy.ts` (`/redact backup`, refresh at start, doctor and status lines), the marker `beat`, `src/core/snippet.ts` with `docs/snippets/personal.json` and `managed.json`. `src/checker/personal.ts` (`personal_data`). Kit: `--backup user|managed`, `--outside`, `--safe-mode`, `--allow-managed-file`; `tools/test-sets/logs.ts`; `tools/measure/targets.ts`; `docs/targets.md`.
-- Tuning (D-071, D-074, D-075): false alarms with no file name through the pipeline 350.28 to 76.30 per MB; log-like text 404.8 to 214.33; catch 135 of 138, code set 41 of 41 and twins 81 of 81 unchanged. The repeated-line skip is gone (D-074).
-- Decisions D-068 to D-079. Approved by the owner: the plugin-guard exclusion (D-073), the prose rule and the targets (D-075, D-078), the one-line change in `tests/core-settings.test.ts`.
-- On this Windows PC: `npm test`, the typecheck, the plugin typecheck, `plugin:build --check`, `claude plugin test` and `measure` pass; `leak-test:backup` 0 of 49 fakes seen over 7 doors, `leak-test:backup-limits` 42 of 42 seen over 6 doors (the limits, proven). The managed run needs the machine's managed settings file and is for CI. macOS and Linux have not seen any of this yet.
-- 15 mutants on the new backup, tuning and personal-data code (marker age, the skew, the prompt block, self-protection, the outbound check, hold, the shape of cleaned output, the size cap, a broken managed file, drop-in order, stand-down, D-071, the type alias rule, the prose rule, the `git@` skip): all killed.
-- Next: push a wip so CI runs the managed leg on 3 OSes and prints the macOS and Linux numbers, then `/verify`, then `/ship`.
+- Spikes S1 to S6 first (findings, Notes); S1 changed the plan: failed commands are outside the backup lock (D-072), three hooks not four. Built: `src/backup/` compiled to `plugin/backup/` (`npm run plugin:build`), `/redact backup`, the marker `beat` (D-077), `personal_data`, the snippets, kit options (`--backup`, `--outside`, `--safe-mode`, `--allow-managed-file`).
+- Tuning and targets (D-071, D-074, D-075, D-078): no-file-name false alarms through the pipeline 350.28 to 76.30 per MB, log-like text 404.8 to 214.33; catch 135/138, code set 41/41, twins 81/81. Numbers in `docs/targets.md`.
+- Checked: local tests, typechecks, validate, `claude plugin test` (144), leak tests (backup 0 of 49 seen, limits 42 of 42 seen), and CI on 3 OSes (run 41319320239, six jobs green). The first CI run failed only on the MCP door under safe mode (script now skips it).
+- Hand tests in the terminal: add, learn, paste and read, observe banner, resume hold, backup lock alone and standing down all passed. They found the `/redact learn` short-value bug (fixed, two tests). Parked by the owner: `outbound: ask` dialog (built, not hand-tested), VS Code, desktop app. Decisions D-068 to D-080.
+- Next: step 6 (release) from `develop` after the merge; `/security-review` and `/code-review high` before its `/ship`.
