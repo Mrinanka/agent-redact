@@ -3,7 +3,7 @@
 
 import type { RowBlock, RowMessage } from './rows.ts'
 
-export const MEDIA_NOTE = '[secret-shield removed an image or document here, because the media setting is drop.]'
+export const MEDIA_NOTE = '[aegiscontext removed an image or document here, because the media setting is drop.]'
 
 const isMedia = (b: RowBlock): boolean => b.type === 'image' || b.type === 'document'
 

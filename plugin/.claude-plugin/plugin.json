@@ -1,8 +1,12 @@
 {
-  "name": "secret-shield",
+  "name": "aegiscontext",
+  "displayName": "AegisContext",
   "version": "0.1.0",
-  "description": "Hides secrets before the model sees them in Claude Code (working name).",
+  "description": "Hides secrets before the model sees them in Claude Code.",
   "author": { "name": "Mrinanka Dhar" },
+  "homepage": "https://github.com/Mrinanka/aegiscontext",
+  "repository": "https://github.com/Mrinanka/aegiscontext",
   "license": "Apache-2.0",
+  "keywords": ["security", "secrets", "redaction", "hooks", "claude-code"],
   "types": "./types/index.d.ts"
 }

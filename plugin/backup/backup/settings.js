@@ -46,7 +46,7 @@ function readSettingsFile(io, file) {
         const doc = JSON.parse(text);
         if (typeof doc !== 'object' || doc === null || Array.isArray(doc))
             return { found: true, broken: true };
-        return { found: true, value: doc.secretShield };
+        return { found: true, value: doc.aegisContext };
     }
     catch {
         return { found: true, broken: true };

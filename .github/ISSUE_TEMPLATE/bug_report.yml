@@ -1,0 +1,41 @@
+name: Bug report
+description: Something does not work, or a fake secret got through.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do **not** paste a real secret anywhere in this issue. Use a fake one built for the test. A secret that reaches the model is a security problem: use the private link on the issue chooser instead.
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of /redact doctor
+      description: Run `/redact doctor` (or `/aegiscontext:doctor` if the hooks are not running) and paste what it says.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: selfcheck
+    attributes:
+      label: Self-check report
+      description: Run `/redact self-check --report` and attach the file it names, or say it failed. The report holds no secrets.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: With a fake secret. Say where it was (typed, a file, command output, a pasted block).
+    validations:
+      required: true
+  - type: input
+    id: setup
+    attributes:
+      label: Claude Code version, system, and where you run it
+      description: For example "2.1.316, Windows 11, terminal" or "VS Code extension".
+    validations:
+      required: true

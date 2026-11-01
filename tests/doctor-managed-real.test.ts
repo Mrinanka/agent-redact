@@ -1,7 +1,7 @@
-// A real managed settings file, read by the plugin (plan step 5, closes two Known issues): the `secretShield` key
+// A real managed settings file, read by the plugin (plan step 5, closes two Known issues): the `aegisContext` key
 // of a file the machine's policy holds reaches the plugin as the `policy` source, and `/redact doctor` calls the
 // install Managed. The file applies to every Claude Code session on the machine while it exists, so this test
-// runs only when SECRET_SHIELD_MANAGED_REAL=1 (CI sets it) and removes the file in `finally`.
+// runs only when AEGISCONTEXT_MANAGED_REAL=1 (CI sets it) and removes the file in `finally`.
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -15,15 +15,15 @@ import { startLeakMock } from '../tools/leak-test/server.ts'
 
 const root = path.join(import.meta.dirname, '..')
 const claude = resolveClaude().cmd
-const skip = process.env.SECRET_SHIELD_MANAGED_REAL !== '1' ? 'set SECRET_SHIELD_MANAGED_REAL=1 to write the machine\'s managed settings file' : claude === 'claude' ? 'the pinned Claude Code is not installed' : false
+const skip = process.env.AEGISCONTEXT_MANAGED_REAL !== '1' ? 'set AEGISCONTEXT_MANAGED_REAL=1 to write the machine\'s managed settings file' : claude === 'claude' ? 'the pinned Claude Code is not installed' : false
 
-test('the plugin reads a secretShield key from a real managed file, and doctor says Managed', { skip, timeout: 120_000 }, async () => {
+test('the plugin reads a aegisContext key from a real managed file, and doctor says Managed', { skip, timeout: 120_000 }, async () => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'doctor-managed-'))
   const work = path.join(base, 'work')
   const config = path.join(base, 'config')
   fs.mkdirSync(work)
   fs.mkdirSync(config)
-  const file = managedFile({ secretShield: { notices: 'off', locked: ['notices'] } })
+  const file = managedFile({ aegisContext: { notices: 'off', locked: ['notices'] } })
   const mock = await startLeakMock({ script: () => ({ kind: 'text', text: 'ok' }) })
   const keep = ['PATH', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'TEMP', 'TMP', 'TMPDIR', 'HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'PROGRAMDATA', 'PROGRAMFILES', 'OS']
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => keep.includes(k.toUpperCase())))
@@ -48,4 +48,8 @@ test('the plugin reads a secretShield key from a real managed file, and doctor s
   }
   assert.match(out, /Install: Managed settings are present/)
   assert.match(out, /Settings: valid/)
+  // R-05a: the guard seats on this machine and the plugin is a user plugin, so prompt.compose must not reach it.
+  // The warning's whole sign rests on this, and nothing else runs it against the real guard.
+  assert.match(out, /Plugin tier: user\./)
+  assert.match(out, /Built-in guard: (?:not known yet\. This machine has managed settings|some events are passed over)/)
 })

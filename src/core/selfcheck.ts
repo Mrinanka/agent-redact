@@ -63,7 +63,7 @@ export function runSelfCheck(makeChecker: () => Checker): CheckResult[] {
 export function reportText(results: readonly CheckResult[], info: ReportInfo): string {
   const failed = results.filter(r => !r.pass).length
   return [
-    'secret-shield self-check',
+    'aegiscontext self-check',
     `date: ${info.date}`,
     `plugin: ${info.version}`,
     `Claude Code: ${info.engine}`,

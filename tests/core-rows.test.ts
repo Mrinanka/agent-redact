@@ -133,5 +133,5 @@ test('withheldRow keeps what the engine pins and replaces the rest with a note t
 test('withheldRow of a row with only a text block is one note', () => {
   const w = withheldRow(row([{ type: 'text', text: GH }]), 'it holds a secret that settings say to block')
   assert.equal(w.content.length, 1)
-  assert.match((w.content[0] as unknown as { text: string }).text, /^\[secret-shield withheld this content: /)
+  assert.match((w.content[0] as unknown as { text: string }).text, /^\[aegiscontext withheld this content: /)
 })

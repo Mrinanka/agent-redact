@@ -1,0 +1,23 @@
+# Scores
+
+What the tool catches, what it wrongly hides, and how fast it is, for this release (v0.1.0-rc.1). Produced by `npm run measure` (Node 24.22.1, a Windows 11 PC; CI prints the same numbers on macOS and Linux). The targets and how they were set are in [targets.md](targets.md).
+
+| What | Result | Target |
+|---|---|---|
+| Catch rate, whole pipeline, public catch set | 135 of 138 (97.8%) | at least 135 |
+| Harmless code left alone (R-08) | 41 of 41 | 41 |
+| Real-looking values in the same spots hidden (twins) | 81 of 81 | 81 |
+| False alarms per MB, source files read with their file name | 5.55 | at most 6.5 |
+| False alarms per MB, the same files with no file name (all command output) | 76.30 | at most 90 |
+| False alarms per MB, log-like text | 214.33 | at most 250 |
+| Slowest speed-set item, one call | 463 ms (2 MB of base64) | at most 1,500 ms |
+| Backup lock, a cold Node process handling one small event | median 107 ms | at most 500 ms |
+
+The 3 cases not caught are a bare value in base64 with no shape and no label (spec section 22).
+
+## How to read these
+
+- **The sets are ours.** The catch set (138 cases of the formats and contexts we thought of) and the log-like set were written by the person who tuned the checker, so they can flatter it. They are a first set, not a verdict. There is no hidden test set in v1 (spec section 23).
+- **Logs are noisy.** 136 of the 225 log-set false alarms are 32-hex values after `key=`; many real API keys look the same, so they stay hidden on purpose.
+- **One computer.** Speed was measured on one machine. A session also pays for starting Claude Code's hook process; on Windows with saved secrets the backup lock starts PowerShell for about a second per hook that acts.
+- **Rules.** 219 of the 222 Gitleaks v8.30.1 rules are used. Three are left out and why is in the decision log (D-032, D-038).

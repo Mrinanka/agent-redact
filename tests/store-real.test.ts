@@ -13,7 +13,7 @@ import { loadList, saveList, type SecretEntry } from '../src/core/store.ts'
 import { nodeExec, nodeFiles, thisOS } from '../tools/measure/store.ts'
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'store-real-'))
-const b = backendFor(thisOS(), { exec: nodeExec, files: nodeFiles(dir), service: `secret-shield-test-${randomUUID()}` })
+const b = backendFor(thisOS(), { exec: nodeExec, files: nodeFiles(dir), service: `aegiscontext-test-${randomUUID()}` })
 const status = await b.status()
 let usable = status === 'ok'
 if (usable) {

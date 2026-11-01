@@ -35,7 +35,7 @@ async function run(name: string, media: 'pass' | 'drop', how: 'read' | 'pasted')
   fs.mkdirSync(work, { recursive: true })
   fs.mkdirSync(config)
   fs.writeFileSync(path.join(work, 'photo.png'), PNG)
-  fs.writeFileSync(path.join(config, 'settings.json'), JSON.stringify({ secretShield: { media } }))
+  fs.writeFileSync(path.join(config, 'settings.json'), JSON.stringify({ aegisContext: { media } }))
   let sawImage = false
   let sawNote = false
   let requests = 0
@@ -44,7 +44,7 @@ async function run(name: string, media: 'pass' | 'drop', how: 'read' | 'pasted')
     if (!r.hasTools) return { kind: 'text', text: 'ok' }
     requests++
     if (/"type":"image"/.test(body)) sawImage = true
-    if (body.includes('secret-shield removed an image')) sawNote = true
+    if (body.includes('aegiscontext removed an image')) sawNote = true
     const turns = r.messages.filter(m => m.role === 'assistant').length
     return how === 'read' && turns === 0 ? { kind: 'tool', name: 'Read', input: { file_path: path.join(work, 'photo.png') } } : { kind: 'text', text: 'done' }
   }

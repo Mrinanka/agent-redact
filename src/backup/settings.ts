@@ -64,7 +64,7 @@ function readSettingsFile(io: SettingsIO, file: string): Read {
     if (text.length > MAX_FILE_BYTES) return { found: true, broken: true }
     const doc = JSON.parse(text) as unknown
     if (typeof doc !== 'object' || doc === null || Array.isArray(doc)) return { found: true, broken: true }
-    return { found: true, value: (doc as Record<string, unknown>).secretShield }
+    return { found: true, value: (doc as Record<string, unknown>).aegisContext }
   } catch {
     return { found: true, broken: true }
   }

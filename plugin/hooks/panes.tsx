@@ -11,8 +11,8 @@ import { outboundText } from './lib/core/outbound.ts'
 import { StoreFull } from './lib/core/store.ts'
 import { ready, registeredChanged } from './runtime.ts'
 
-const ADD_PANE = 'secret-shield-add'
-const LEARN_PANE = 'secret-shield-learn'
+const ADD_PANE = 'aegiscontext-add'
+const LEARN_PANE = 'aegiscontext-learn'
 
 /** The values `/redact learn` found, by row id, in the worker's memory only. */
 export const learnValues = new Map<string, string>()
@@ -39,7 +39,7 @@ function storeWords(error: unknown): string {
 }
 
 async function submitAdd($: EngineInterface, value: string): Promise<void> {
-  const note = { plugin: 'secret-shield', key: 'addNote' } as const
+  const note = { plugin: 'aegiscontext', key: 'addNote' } as const
   const problem = validRegistered(value)
   if (problem) {
     await $.state.set(note, { text: `That value is ${problem}. It must be 6 to 8,192 characters.`, isError: true })
@@ -56,11 +56,11 @@ async function submitAdd($: EngineInterface, value: string): Promise<void> {
   registeredChanged()
   const sent = await timesSent($, value).catch(() => 0)
   await $.ui.close({ id: ADD_PANE })
-  $.ui.log(sent > 0 ? `secret-shield: saved. This value was already sent to the model ${sent} times this session. Consider rotating it.` : 'secret-shield: saved. It is hidden from now on.')
+  $.ui.log(sent > 0 ? `aegiscontext: saved. This value was already sent to the model ${sent} times this session. Consider rotating it.` : 'aegiscontext: saved. It is hidden from now on.')
 }
 
 async function saveLearned($: EngineInterface): Promise<void> {
-  const rows = (await $.state.get({ plugin: 'secret-shield', key: 'learnRows' })).value ?? []
+  const rows = (await $.state.get({ plugin: 'aegiscontext', key: 'learnRows' })).value ?? []
   const added = await today($)
   const ticked = rows.filter(r => r.ticked).flatMap(r => {
     const value = learnValues.get(r.id)
@@ -76,17 +76,17 @@ async function saveLearned($: EngineInterface): Promise<void> {
     await $.ui.close({ id: LEARN_PANE })
     const already = entries.length - saved
     $.ui.log(
-      `secret-shield: saved ${saved} of ${rows.length} values.` +
+      `aegiscontext: saved ${saved} of ${rows.length} values.` +
         (skipped > 0 ? ` ${skipped} skipped: a value must be 6 to 8,192 characters.` : '') +
         (already > 0 ? ` ${already} already saved.` : ''),
     )
   } catch (error) {
-    await $.state.set({ plugin: 'secret-shield', key: 'learnNote' }, { text: storeWords(error), isError: true })
+    await $.state.set({ plugin: 'aegiscontext', key: 'learnNote' }, { text: storeWords(error), isError: true })
   }
 }
 
 async function toggle($: EngineInterface, id: string): Promise<void> {
-  const key = { plugin: 'secret-shield', key: 'learnRows' } as const
+  const key = { plugin: 'aegiscontext', key: 'learnRows' } as const
   const rows = (await $.state.get(key)).value ?? []
   await $.state.set(key, rows.map(r => (r.id === id ? { ...r, ticked: !r.ticked } : r)))
 }
@@ -95,7 +95,7 @@ export async function drawAdd($: EngineInterface, e: UiRenderInput) {
   const { Box, Input, Text } = $.ui.resolve(e) as never as Record<string, (...a: never[]) => never>
   // This surface has no text field.
   if (!Input) return <Text>Open this session on a computer to add a secret.</Text>
-  const note = (await $.state.get({ plugin: 'secret-shield', key: 'addNote' })).value
+  const note = (await $.state.get({ plugin: 'aegiscontext', key: 'addNote' })).value
   return (
     <Box flexDirection="column">
       <Text>Paste the secret and press Enter. It stays out of the chat. Esc cancels.</Text>
@@ -107,8 +107,8 @@ export async function drawAdd($: EngineInterface, e: UiRenderInput) {
 
 export async function drawLearn($: EngineInterface, e: UiRenderInput) {
   const { Box, Button, Text } = $.ui.resolve(e) as never as Record<string, (...a: never[]) => never>
-  const rows = (await $.state.get({ plugin: 'secret-shield', key: 'learnRows' })).value ?? []
-  const note = (await $.state.get({ plugin: 'secret-shield', key: 'learnNote' })).value
+  const rows = (await $.state.get({ plugin: 'aegiscontext', key: 'learnRows' })).value ?? []
+  const note = (await $.state.get({ plugin: 'aegiscontext', key: 'learnNote' })).value
   return (
     <Box flexDirection="column">
       <Text>Tick what to remember. Values are not shown.</Text>

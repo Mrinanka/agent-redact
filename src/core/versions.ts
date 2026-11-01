@@ -1,7 +1,7 @@
-// The tested-versions list (spec §4, §20, R-01). The CLI's pinned version, and the VS Code extension's
-// own copy of Claude Code, which check 0.10 ran.
+// The tested-versions list (spec §4, §20, R-01). The CLI's pinned version, the VS Code extension's own copy of
+// Claude Code (check 0.10), and the `stable` channel's 2.1.309 (the full kit, step 6).
 
-export const TESTED_VERSIONS: readonly string[] = ['2.1.316', '2.1.314']
+export const TESTED_VERSIONS: readonly string[] = ['2.1.316', '2.1.314', '2.1.309']
 
 export const isTested = (version: string): boolean => TESTED_VERSIONS.includes(version)
 

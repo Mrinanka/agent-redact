@@ -50,11 +50,11 @@ export type Scenario = {
 }
 
 /** What `claude -p` prints when the backup lock stops a prompt. */
-const BACKUP_BLOCKED = /secret-shield \(backup lock\): your message holds a secret/
+const BACKUP_BLOCKED = /aegiscontext \(backup lock\): your message holds a secret/
 
 export const MCP_TOOL = 'mcp__leak__get_note'
 
-export const ALLOWED_TOOLS = ['Read', 'Bash', 'PowerShell', 'Agent', 'Task', MCP_TOOL]
+export const ALLOWED_TOOLS = ['Read', 'Bash', 'PowerShell', 'Agent', 'Task', 'Skill', MCP_TOOL]
 
 const LARGE_OUTPUT = 200 * 1024
 
@@ -188,6 +188,12 @@ export const SCENARIOS: Scenario[] = [
     contextHook: 'hook-context',
     runs: [{ prompt: () => 'Reply with ok.', script: () => steps([]) }],
   },
+  {
+    name: 'skill-text',
+    doors: ['skill'],
+    files: c => ({ [path.join('.claude', 'skills', 'leak-note', 'SKILL.md')]: `---\nname: leak-note\ndescription: A short note for this project.\n---\n\n${c.block('skill')}\n` }),
+    runs: [{ prompt: () => 'Use the leak-note skill.', script: () => steps([() => tool('Skill', { skill: 'leak-note' })]) }],
+  },
 ]
 
 // The backup lock (spec §5.2) covers part of what the main lock does. Inside its limits a door must stay clean;
@@ -205,6 +211,26 @@ export const BACKUP_ONLY: Scenario[] = [
       { prompt: () => 'Remember: nothing in particular. Reply.', script: () => steps([]) },
       { prompt: () => '/compact', resume: true, script: c => steps([], { summary: `Summary of the chat:
 ${c.block('summary')}` }) },
+      { prompt: () => 'Reply with ok.', resume: true, script: () => steps([]) },
+    ],
+  },
+]
+
+/**
+ * The compaction summary under Claude Code's built-in guard (kit mode --guarded). The guard passes the `compaction` row
+ * past a user-tier plugin, so the summary is stored raw; the resume check then sees it in the history and stops the next
+ * message (R-06), so the model is never sent it. The door is proven by that stop: no request in the last run, and the
+ * hold message on stdout. A person who runs `/redact allow` lifts the hold and sends it (spec §22).
+ */
+export const GUARDED_ONLY: Scenario[] = [
+  {
+    name: 'compaction-held',
+    doors: ['summary'],
+    countFromRun: 2,
+    heldMessage: /history contains \d+ secrets/,
+    runs: [
+      { prompt: () => 'Remember: nothing in particular. Reply.', script: () => steps([]) },
+      { prompt: () => '/compact', resume: true, script: c => steps([], { summary: `Summary of the chat:\n${c.block('summary')}` }) },
       { prompt: () => 'Reply with ok.', resume: true, script: () => steps([]) },
     ],
   },

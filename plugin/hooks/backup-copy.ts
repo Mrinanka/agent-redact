@@ -1,6 +1,6 @@
 // The backup lock's stable copy (spec §5.2, §15, D-068). An installed plugin's folder can move or be replaced
 // by an update, and the settings hooks point at a fixed path, so `/redact backup` copies `plugin/backup/` to
-// <config>/secret-shield/backup/ and the settings point there. Later sessions refresh an existing copy when
+// <config>/aegiscontext/backup/ and the settings point there. Later sessions refresh an existing copy when
 // its manifest differs from the plugin's, and never create one unasked.
 //
 // Only text moves here: compiled JavaScript, JSON and the licences. A mod can't delete a file, so a file the
@@ -116,7 +116,7 @@ export function backupHooksIn(settings: unknown): HookFacts {
         for (const h of list) {
           const o = h as { args?: unknown; command?: unknown; onFailure?: unknown } | null
           const parts = [...(Array.isArray(o?.args) ? o.args : []), o?.command].filter((x): x is string => typeof x === 'string')
-          if (!parts.some(p => /secret-shield.*[\\/]backup[\\/]main\.js$/i.test(p))) continue
+          if (!parts.some(p => /aegiscontext.*[\\/]backup[\\/]main\.js$/i.test(p))) continue
           found = true
           if (o?.onFailure !== 'block') all = false
         }

@@ -69,7 +69,7 @@ function world(on: On, o: Options = {}): World {
   on('session.surfaces', () => ({ value: o.noSurfaces ? [] : ['terminal'] }))
   on('session.version', () => ({ value: { version: o.version ?? '2.1.316', base: '2.1.316', builtAt: 'x' } }))
   on('session.messages', () => ({ value: o.messages ?? [] }))
-  on('settings.read', (_$, e) => ({ value: e.source === 'user' ? { secretShield: o.settings ?? {}, ...(o.userExtra ?? {}) } : e.source === 'policy' ? (o.policy ?? {}) : {} }))
+  on('settings.read', (_$, e) => ({ value: e.source === 'user' ? { aegisContext: o.settings ?? {}, ...(o.userExtra ?? {}) } : e.source === 'policy' ? (o.policy ?? {}) : {} }))
   /** The plugin's own build folder, wherever the plugin is installed: `<root>/backup/...` reads from `o.pluginTree`. */
   const treeKey = (p: string): string | undefined => {
     const slashed = p.split(String.fromCharCode(92)).join('/')
@@ -245,7 +245,7 @@ test('a placeholder written into a new file gives a notice with its line, and /r
 
 test("Claude can't write to the tool's data folder or plugin folder", async ($, on) => {
   const w = world(on)
-  for (const path of [cfg('secret-shield', 'log', 'a.jsonl'), cfg('x', '..', 'secret-shield', 'store', 'index.dpapi')]) {
+  for (const path of [cfg('aegiscontext', 'log', 'a.jsonl'), cfg('x', '..', 'aegiscontext', 'store', 'index.dpapi')]) {
     expect(typeof (await $.tool.call(write(path, 'x'))).deny).toBe('string')
   }
   expect(w.ran).toEqual([])
@@ -261,7 +261,7 @@ test('a settings change that would switch the tool off is refused; another setti
 
 test('a shell command that changes a protected file is refused', async ($, on) => {
   const w = world(on)
-  expect(typeof (await $.tool.call(bash(`rm -rf ${cfg('secret-shield').replace(/\\/g, '/')}`))).deny).toBe('string')
+  expect(typeof (await $.tool.call(bash(`rm -rf ${cfg('aegiscontext').replace(/\\/g, '/')}`))).deny).toBe('string')
   expect(w.ran).toEqual([])
 })
 
@@ -280,7 +280,7 @@ test('observe: nothing is hidden or blocked, each detection is logged as would h
 
 test('observe: self-protection stays on (D-058)', async ($, on) => {
   const w = world(on, { settings: { mode: 'observe' } })
-  expect(typeof (await $.tool.call(write(cfg('secret-shield', 'store', 'index.dpapi'), 'x'))).deny).toBe('string')
+  expect(typeof (await $.tool.call(write(cfg('aegiscontext', 'store', 'index.dpapi'), 'x'))).deny).toBe('string')
   expect(w.ran).toEqual([])
 })
 
@@ -361,7 +361,7 @@ test('an @ file with a secret is read from a copy with the same name and no secr
   const w = world(on, { files: { [file]: `key ${FAKE}\n` }, mention: seen })
   await $.prompt.mention({ mention: 'notes.txt', path: file })
   expect(seen[0]?.endsWith('notes.txt')).toBe(true)
-  expect(seen[0]?.includes('secret-shield')).toBe(true)
+  expect(seen[0]?.includes('aegiscontext')).toBe(true)
   expect(Object.values(w.files).some(t => t.includes('[REDACTED:'))).toBe(true)
   expect(w.writes.some(x => x.path.endsWith('notes.txt') && !x.text.includes(FAKE))).toBe(true)
   noFake(w)
@@ -392,15 +392,15 @@ test('media drop refuses an @ image', async ($, on) => {
 
 // ---- the add and learn panes (§8, R-07) ----------------------------------------------------------
 
-const ADD = { plugin: 'secret-shield', component: 'Pane', requestId: 'secret-shield-add', surface: 'terminal', props: { title: 'Add', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 10 }, view: {} } } as const
-const LEARN = { ...ADD, requestId: 'secret-shield-learn' } as const
+const ADD = { plugin: 'aegiscontext', component: 'Pane', requestId: 'aegiscontext-add', surface: 'terminal', props: { title: 'Add', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 10 }, view: {} } } as const
+const LEARN = { ...ADD, requestId: 'aegiscontext-learn' } as const
 
 test('/redact add: the value reaches the store on stdin and no state, row, log or screen', async ($, on) => {
   const w = world(on)
   const ui = await $.ui.mount(ADD as never) as never as { input: (t: unknown) => Promise<unknown>; unmount: () => Promise<void> }
   await ui.input({ key: 'value', text: SECRET })
   expect(w.stdin.length).toBeGreaterThan(0)
-  expect(w.closed).toEqual(['secret-shield-add'])
+  expect(w.closed).toEqual(['aegiscontext-add'])
   for (const t of [JSON.stringify(w.states), stored(w), ...w.writes.map(x => x.text), ...w.ui]) expect(t.includes(SECRET)).toBe(false)
   await ui.unmount()
   await $.session.append(row(`seen ${SECRET} here`))
@@ -443,7 +443,7 @@ async function sha256(text: string): Promise<string> {
 test('a failed load warns, is tried again later, and then hides the value', async ($, on) => {
   const list = encode(JSON.stringify([{ value: SECRET, label: 'mine', added: '2026-11-01' }]))
   const index = encode(JSON.stringify({ v: 1, generation: 1, pieces: 1, checksum: await sha256(list), count: 1 }))
-  const w = world(on, { files: { [cfg('secret-shield', 'store', 'index.dpapi')]: index, [cfg('secret-shield', 'store', 'list-1-0.dpapi')]: list } })
+  const w = world(on, { files: { [cfg('aegiscontext', 'store', 'index.dpapi')]: index, [cfg('aegiscontext', 'store', 'list-1-0.dpapi')]: list } })
   w.storeDown.on = true
   await $.session.append(row('nothing here'))
   expect(w.ui.some(l => l.includes('saved secrets'))).toBe(true)
@@ -469,7 +469,7 @@ test('/redact learn lists names, never values, and saves what is ticked', async 
   expect(JSON.stringify(buttons)).toContain('[x] GITHUB_TOKEN')
   expect(JSON.stringify(buttons)).toContain('[ ] PORT')
   await ui.press({ key: 'save' })
-  expect(w.closed).toEqual(['secret-shield-learn'])
+  expect(w.closed).toEqual(['aegiscontext-learn'])
   expect(w.ui.some(l => l.includes('saved 1 of 2'))).toBe(true)
 })
 
@@ -480,6 +480,7 @@ const said = (w: World): boolean => w.ui.some(l => l.includes('a check failed'))
 const logged = (w: World, action: 'held' | 'allowed'): boolean => failures(w).some(l => l.includes(`"action":"${action}"`))
 
 const STEP = { turnId: 't', index: 0, messages: [], system: [], tools: [], model: 'm' } as never
+const COMPOSE = { sections: [], model: 'm' } as never
 function stepBeneath(on: On, fail = false): { count: number } {
   const sent = { count: 0 }
   on('turn.step', async function* () {
@@ -544,6 +545,9 @@ for (const mode of ['allow', 'hold'] as const) {
   test(`turn.step failing under ${mode}: ${held ? 'no request is sent' : 'the request goes'}, with a warning and a log line`, async ($, on) => {
     const sent = stepBeneath(on)
     const w = world(on, { settings })
+    // No guard on this machine: under hold, a step with no compose is refused before it gets as far as this failure.
+    on('prompt.compose', () => ({ sections: [] }))
+    await $.prompt.compose(COMPOSE)
     w.clock.broken = true
     await drain($.turn.step(STEP))
     expect(sent.count).toBe(held ? 0 : 1)
@@ -569,6 +573,9 @@ test('turn.step: clean history lets the request through once', async ($, on) => 
 test('turn.step: a request that fails beneath is not sent again, and is not called a failed check', async ($, on) => {
   const sent = stepBeneath(on, true)
   const w = world(on, { settings: { on_check_failure: 'hold' } })
+  // No guard on this machine: under hold, a step with no compose is refused before it is sent.
+  on('prompt.compose', () => ({ sections: [] }))
+  await $.prompt.compose(COMPOSE)
   await drain($.turn.step(STEP)).catch(() => undefined)
   expect(sent.count).toBe(1)
   expect(said(w)).toBe(false)
@@ -688,7 +695,7 @@ test('a new file is not a failed check', async ($, on) => {
 const under = (root: string, ...parts: string[]): string => [root, ...parts].join(posix ? '/' : '\\')
 
 test('a link to a protected file is followed', async ($, on) => {
-  const inside = cfg('secret-shield', 'store', 'index.dpapi')
+  const inside = cfg('aegiscontext', 'store', 'index.dpapi')
   const link = work('innocent.txt')
   const w = world(on, { files: { [inside]: 'x' }, links: { [link]: inside } })
   expect(typeof (await $.tool.call(write(link, 'x'))).deny).toBe('string')
@@ -697,7 +704,7 @@ test('a link to a protected file is followed', async ($, on) => {
 
 test('a new file through a linked folder is followed', async ($, on) => {
   const link = work('shortcut')
-  const w = world(on, { links: { [link]: cfg('secret-shield') }, dirs: [cfg('secret-shield')] })
+  const w = world(on, { links: { [link]: cfg('aegiscontext') }, dirs: [cfg('aegiscontext')] })
   expect(typeof (await $.tool.call(write(under(link, 'log', 'new.jsonl'), 'x'))).deny).toBe('string')
   expect(w.ran).toEqual([])
 })
@@ -712,7 +719,7 @@ test('a link to a settings file gets the settings check', async ($, on) => {
 
 test('a config folder that is itself a link: the real spelling is protected too', async ($, on) => {
   const elsewhere = posix ? '/dots/claude' : 'D:\\dots\\claude'
-  const inside = under(elsewhere, 'secret-shield')
+  const inside = under(elsewhere, 'aegiscontext')
   const w = world(on, { links: { [cfg()]: elsewhere }, dirs: [elsewhere, inside] })
   expect(typeof (await $.tool.call(write(under(inside, 'a.txt'), 'x'))).deny).toBe('string')
   expect(w.ran).toEqual([])
@@ -752,7 +759,7 @@ test('R-01: a tested version says nothing', async ($, on) => {
   expect(w.ui.some(l => l.includes('tested list'))).toBe(false)
 })
 
-const BAND = { plugin: 'secret-shield', component: 'AbovePrompt', surface: 'terminal', props: { hasSurvey: false, isWorking: false, maxRows: 5, bodyColumns: 60, scroll: { offset: 0, bodyRows: 4 }, view: {} } } as const
+const BAND = { plugin: 'aegiscontext', component: 'AbovePrompt', surface: 'terminal', props: { hasSurvey: false, isWorking: false, maxRows: 5, bodyColumns: 60, scroll: { offset: 0, bodyRows: 4 }, view: {} } } as const
 const BANNER = /OBSERVE MODE, secrets are NOT being hidden/
 type Band = { find: (q: unknown) => Promise<{ text?: string } | undefined> }
 
@@ -762,7 +769,7 @@ test('R-13: observe mode draws the banner above the prompt, and says so at start
   await start($)
   expect(w.ui.some(l => BANNER.test(l))).toBe(true)
   const ui = await $.ui.mount(BAND as never) as never as Band
-  expect((await ui.find({ type: 'Text', text: BANNER }))?.text).toContain('secret-shield: OBSERVE MODE')
+  expect((await ui.find({ type: 'Text', text: BANNER }))?.text).toContain('aegiscontext: OBSERVE MODE')
 })
 
 test('R-13: enforce mode draws no banner', async ($, on) => {
@@ -823,7 +830,7 @@ test('an @ path that is not there is left to the engine, not called a failed che
 const warnGithub = { rules: { actions: { 'github-pat': 'warn' } } }
 
 test('a protected path that is itself a link elsewhere stays protected', async ($, on) => {
-  const path = cfg('secret-shield', 'log', 'a.jsonl')
+  const path = cfg('aegiscontext', 'log', 'a.jsonl')
   const w = world(on, { files: { [work('out.txt')]: 'x' }, links: { [path]: work('out.txt') } })
   expect(typeof (await $.tool.call(write(path, 'x'))).deny).toBe('string')
   expect(w.ran).toEqual([])
@@ -897,7 +904,7 @@ test('observe: outbound ask asks nobody', async ($, on) => {
   expect(out.decision).toBe('allow')
 })
 
-for (const skill of ['redact', 'secret-shield:redact', 'secret-shield:doctor']) {
+for (const skill of ['redact', 'aegiscontext:redact', 'aegiscontext:doctor']) {
   test(`R-16: Claude can't run ${skill} through the Skill tool`, async ($, on) => {
     const w = world(on)
     expect(typeof (await $.tool.call({ tool: 'Skill', skill } as never)).deny).toBe('string')
@@ -977,7 +984,7 @@ test('/redact self-check writes a report only when asked', async ($, on) => {
 })
 
 test('/redact doctor says what to do about an untested version and a locked store', async ($, on) => {
-  const w = world(on, { version: '9.9.9', files: { [cfg('secret-shield', 'store', 'index.dpapi')]: 'cipher' } })
+  const w = world(on, { version: '9.9.9', files: { [cfg('aegiscontext', 'store', 'index.dpapi')]: 'cipher' } })
   w.storeDown.locked = true
   const out = await redact($, 'doctor')
   expect(out).toContain('Run /redact self-check')
@@ -1085,7 +1092,7 @@ test('/redact backup copies the build to the stable folder, manifest last, and p
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   const w = backupWorld(on)
   const out = await redact($, 'backup')
-  const stable = cfg('secret-shield', 'backup')
+  const stable = cfg('aegiscontext', 'backup')
   const written = w.writes.filter(x => x.path.startsWith(stable))
   expect(written.map(x => x.path.slice(stable.length + 1).replace(/\\/g, '/')).sort()).toEqual(['backup/main.js', 'core/x.js', 'manifest.json', 'package.json'])
   expect(written.at(-1)?.path.endsWith('manifest.json')).toBe(true)
@@ -1117,15 +1124,15 @@ test('a session start never creates the stable copy unasked (D-068)', async ($, 
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   const w = backupWorld(on)
   await $.session.start({ cwd: work(), surface: 'terminal', isInteractive: false })
-  expect(w.writes.filter(x => x.path.startsWith(cfg('secret-shield', 'backup'))).length).toBe(0)
+  expect(w.writes.filter(x => x.path.startsWith(cfg('aegiscontext', 'backup'))).length).toBe(0)
 })
 
 test('a session start refreshes an existing stale copy', async ($, on) => {
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   const w = backupWorld(on)
-  w.files[cfg('secret-shield', 'backup', 'manifest.json')] = '{"version":"0.0.9","files":{}}'
+  w.files[cfg('aegiscontext', 'backup', 'manifest.json')] = '{"version":"0.0.9","files":{}}'
   await $.session.start({ cwd: work(), surface: 'terminal', isInteractive: false })
-  const refreshed = w.writes.filter(x => x.path.startsWith(cfg('secret-shield', 'backup')))
+  const refreshed = w.writes.filter(x => x.path.startsWith(cfg('aegiscontext', 'backup')))
   expect(refreshed.length).toBe(4)
   expect(refreshed.at(-1)?.path.endsWith('manifest.json')).toBe(true)
 })
@@ -1133,13 +1140,13 @@ test('a session start refreshes an existing stale copy', async ($, on) => {
 test('a session start leaves a current copy alone', async ($, on) => {
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   const w = backupWorld(on)
-  w.files[cfg('secret-shield', 'backup', 'manifest.json')] = SOURCE()['backup/manifest.json'] as string
+  w.files[cfg('aegiscontext', 'backup', 'manifest.json')] = SOURCE()['backup/manifest.json'] as string
   await $.session.start({ cwd: work(), surface: 'terminal', isInteractive: false })
-  expect(w.writes.filter(x => x.path.startsWith(cfg('secret-shield', 'backup'))).length).toBe(0)
+  expect(w.writes.filter(x => x.path.startsWith(cfg('aegiscontext', 'backup'))).length).toBe(0)
 })
 
 const HOOKS = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({
-  hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: 'node', args: [cfg('secret-shield', 'backup', 'backup', 'main.js')], timeout: 30, ...extra }] }] },
+  hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: 'node', args: [cfg('aegiscontext', 'backup', 'backup', 'main.js')], timeout: 30, ...extra }] }] },
 })
 
 test('doctor and the status line say where the backup lock stands', async ($, on) => {
@@ -1149,13 +1156,13 @@ test('doctor and the status line say where the backup lock stands', async ($, on
   expect(bare).toContain('run /redact backup')
   expect(bare).toContain('Node (needed by the backup lock): 24.22.1')
   expect(await redact($, '')).toContain('Backup lock: not set up')
-  w.files[cfg('secret-shield', 'backup', 'manifest.json')] = SOURCE()['backup/manifest.json'] as string
+  w.files[cfg('aegiscontext', 'backup', 'manifest.json')] = SOURCE()['backup/manifest.json'] as string
   expect(await redact($, '')).toContain('copied, but no settings run it yet')
 })
 
 test('doctor warns when the hooks lack onFailure block, when Node is missing and when the copy is old', async ($, on) => {
   const w = backupWorld(on, { userExtra: HOOKS(), node: false })
-  w.files[cfg('secret-shield', 'backup', 'manifest.json')] = '{"version":"0.0.9","files":{}}'
+  w.files[cfg('aegiscontext', 'backup', 'manifest.json')] = '{"version":"0.0.9","files":{}}'
   const out = await redact($, 'doctor')
   expect(out).toContain('Backup lock: hooks found in user settings; copy 0.0.9, out of date')
   expect(out).toContain('not found on the PATH')
@@ -1165,7 +1172,7 @@ test('doctor warns when the hooks lack onFailure block, when Node is missing and
 
 test('doctor is quiet about onFailure when the hooks set it, and says the copy is current', async ($, on) => {
   const w = backupWorld(on, { userExtra: HOOKS({ onFailure: 'block' }) })
-  w.files[cfg('secret-shield', 'backup', 'manifest.json')] = SOURCE()['backup/manifest.json'] as string
+  w.files[cfg('aegiscontext', 'backup', 'manifest.json')] = SOURCE()['backup/manifest.json'] as string
   const out = await redact($, 'doctor')
   expect(out).toContain('copy 0.1.0, current')
   expect(out).not.toContain('do not set onFailure')
@@ -1179,4 +1186,187 @@ test('doctor shows the marker and how long ago the main lock last beat', async (
   w.files[marker?.path ?? ''] = marker?.text ?? ''
   w.clock.now += 12_000
   expect(await redact($, 'doctor')).toMatch(/Marker: present, last beat 1[12] s ago/)
+})
+
+// ---- step 6: the built-in guard (spec §5.3, §22) -----------------------------------------------------
+// On some machines Claude Code routes prompt.compose and other events past a user-tier plugin. The plugin cannot
+// fix that, so a main turn.step that comes with no prompt.compose seen warns once and doctor says so.
+
+const guardLines = (w: World): string[] => w.ui.filter(l => l.includes('organization plugin'))
+
+test('guard: a main turn.step with no prompt.compose seen warns, with no value in it', async ($, on) => {
+  stepBeneath(on)
+  const w = world(on)
+  await drain($.turn.step(STEP))
+  expect(guardLines(w).length).toBeGreaterThanOrEqual(1)
+  noFake(w)
+})
+
+test('guard: the warning raises a flag in $.state, so it is not shown again (the next test reads it back)', async ($, on) => {
+  stepBeneath(on)
+  const w = world(on)
+  await drain($.turn.step(STEP))
+  expect(guardLines(w).length).toBe(2) // the log line and the toast
+  expect(w.states.includes(true)).toBe(true)
+})
+
+test('guard: silent when prompt.compose ran before the step', async ($, on) => {
+  stepBeneath(on)
+  const w = world(on)
+  on('prompt.compose', () => ({ sections: [] }))
+  await $.prompt.compose(COMPOSE)
+  await drain($.turn.step(STEP))
+  expect(guardLines(w)).toEqual([])
+})
+
+test('guard: silent for a subagent step', async ($, on) => {
+  stepBeneath(on)
+  const w = world(on)
+  await drain($.turn.step({ ...(STEP as object), agentId: 'agent-1' } as never))
+  expect(guardLines(w)).toEqual([])
+})
+
+test('guard: a worker restart does not repeat it (the flag lives in $.state)', async ($, on) => {
+  stepBeneath(on)
+  const w = world(on)
+  // A new worker has no memory of its own: the flag comes back from $.state.
+  on('state.get', (_$, e, next) => (e.key === 'guardWarned' ? { value: { value: true, version: 1 } } : next(e)))
+  await drain($.turn.step(STEP))
+  expect(guardLines(w)).toEqual([])
+})
+
+test('guard: doctor reports the pass-over after the warning, and a fix', async ($, on) => {
+  stepBeneath(on)
+  const w = world(on)
+  await drain($.turn.step(STEP))
+  const out = await redact($, 'doctor')
+  expect(out).toMatch(/Built-in guard: .*passed over/i)
+  expect(out).toContain('organization plugin')
+  noFake(w)
+})
+
+const guardLogged = (w: World): string[] => w.writes.flatMap(x => x.text.split('\n')).filter(l => l.includes('"door":"guard"'))
+
+test('guard: the pass-over reaches the log file as well as the screen, because a -p run shows no warning', async ($, on) => {
+  const sent = stepBeneath(on)
+  const w = world(on)
+  await drain($.turn.step(STEP))
+  expect(guardLogged(w).length).toBeGreaterThanOrEqual(1)
+  expect(guardLogged(w)[0]).toContain('"action":"allowed"')
+  expect(sent.count).toBe(1)
+  noFake(w)
+})
+
+test('guard: no log line when prompt.compose ran', async ($, on) => {
+  stepBeneath(on)
+  const w = world(on)
+  on('prompt.compose', () => ({ sections: [] }))
+  await $.prompt.compose(COMPOSE)
+  await drain($.turn.step(STEP))
+  expect(guardLogged(w)).toEqual([])
+})
+
+test('guard: under hold a pass-over refuses the request, every time, and says so once', async ($, on) => {
+  const sent = stepBeneath(on)
+  const w = world(on, { settings: { on_check_failure: 'hold' } })
+  await drain($.turn.step(STEP))
+  await drain($.turn.step(STEP))
+  expect(sent.count).toBe(0)
+  expect(guardLines(w).length).toBe(2) // the log line and the toast, once
+  expect(guardLogged(w)[0]).toContain('"action":"held"')
+  noFake(w)
+})
+
+/** What the person sees: the engine shows what a step streams, never what it returns (a bare return is "Execution error"). */
+async function shown(stream: AsyncIterable<unknown>): Promise<{ text: string; stops: number }> {
+  let text = ''
+  let stops = 0
+  for await (const c of stream as AsyncIterable<{ kind: string; text?: string }>) {
+    if (c.kind === 'text') text += c.text ?? ''
+    if (c.kind === 'stop') stops++
+  }
+  return { text, stops }
+}
+
+test('guard: a refused request streams its reason and ends, so the person reads it', async ($, on) => {
+  stepBeneath(on)
+  world(on, { settings: { on_check_failure: 'hold' } })
+  const out = await shown($.turn.step(STEP))
+  expect(out.text).toContain('this request was not sent')
+  expect(out.text).toContain('docs/managed.md')
+  expect(out.stops).toBe(1)
+})
+
+test('turn.step: a request held for a resumed history streams its reason and ends', async ($, on) => {
+  stepBeneath(on)
+  world(on, { messages: old })
+  on('prompt.compose', () => ({ sections: [] }))
+  await $.prompt.compose(COMPOSE)
+  const out = await shown($.turn.step(STEP))
+  expect(out.text).toContain('history contains')
+  expect(out.stops).toBe(1)
+})
+
+test('turn.step: a request held by a failed check streams its reason and ends', async ($, on) => {
+  stepBeneath(on)
+  const w = world(on, { settings: { on_check_failure: 'hold' } })
+  on('prompt.compose', () => ({ sections: [] }))
+  await $.prompt.compose(COMPOSE)
+  w.clock.broken = true
+  const out = await shown($.turn.step(STEP))
+  expect(out.text).toContain('the request was not sent')
+  expect(out.stops).toBe(1)
+})
+
+test('guard: under hold a request goes once prompt.compose has run', async ($, on) => {
+  const sent = stepBeneath(on)
+  world(on, { settings: { on_check_failure: 'hold' } })
+  on('prompt.compose', () => ({ sections: [] }))
+  await $.prompt.compose(COMPOSE)
+  await drain($.turn.step(STEP))
+  expect(sent.count).toBe(1)
+})
+
+test('guard: under hold a subagent step is left alone, because the main step before it was the one to refuse', async ($, on) => {
+  const sent = stepBeneath(on)
+  world(on, { settings: { on_check_failure: 'hold' } })
+  await drain($.turn.step({ ...(STEP as object), agentId: 'agent-1' } as never))
+  expect(sent.count).toBe(1)
+})
+
+test('guard: observe holds nothing, even under hold', async ($, on) => {
+  const sent = stepBeneath(on)
+  const w = world(on, { settings: { mode: 'observe', on_check_failure: 'hold' } })
+  await drain($.turn.step(STEP))
+  expect(sent.count).toBe(1)
+  expect(guardLogged(w)[0]).toContain('"action":"allowed"')
+})
+
+test('guard: a worker restart under hold still refuses, though the flag says it has warned', async ($, on) => {
+  const sent = stepBeneath(on)
+  const w = world(on, { settings: { on_check_failure: 'hold' } })
+  on('state.get', (_$, e, next) => (e.key === 'guardWarned' ? { value: { value: true, version: 1 } } : next(e)))
+  await drain($.turn.step(STEP))
+  expect(sent.count).toBe(0)
+  expect(guardLines(w)).toEqual([])
+})
+
+test('doctor: a policy naming another plugin is not a Managed install', async ($, on) => {
+  world(on, { policy: { enabledPlugins: { 'other@market': true } } })
+  expect(await redact($, 'doctor')).toContain('Install: Personal mode.')
+})
+
+test('doctor: a policy enabling this plugin is a Managed install', async ($, on) => {
+  world(on, { policy: { enabledPlugins: { 'aegiscontext@aegiscontext': true } } })
+  expect(await redact($, 'doctor')).toContain('Install: Managed settings are present.')
+})
+
+test('guard: doctor says the events reach the plugin once prompt.compose has run', async ($, on) => {
+  world(on)
+  on('prompt.compose', () => ({ sections: [] }))
+  await $.prompt.compose(COMPOSE)
+  const out = await redact($, 'doctor')
+  expect(out).toMatch(/Built-in guard: .*reach the plugin/i)
+  expect(out).not.toMatch(/passed over/i)
+  expect(out).toMatch(/Plugin tier: (?:prepend|user|append|builtin|not visible)/)
 })

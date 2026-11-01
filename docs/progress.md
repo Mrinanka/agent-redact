@@ -2,7 +2,7 @@
 
 Spec: `docs/spec.md`. Plan: `docs/plan.md`. Parked work: spec §23.
 
-**Current focus:** Step 6, Release + Audit 2 (branch `step-6` from `develop`, after step 5 is merged). Run `/security-review` and `/code-review high` before `/ship`. The hand checks still open are in Known issues (VS Code, desktop app, `outbound: ask`, interactive display).
+**Current focus:** All 7 steps are built. Next: the owner merges the step 6 PR, then the release steps in `docs/release-checklist.md`: create `release` from `develop` and make it the default branch, tag `v0.1.0-rc.1` at its tip, and run the literal `/plugin install` line once by hand. The hand checks and the two weeks of daily use are in Known issues.
 
 ## Steps
 
@@ -14,7 +14,7 @@ Spec: `docs/spec.md`. Plan: `docs/plan.md`. Parked work: spec §23.
 | 3 | Core hiding + Audit 1 | `step-3` | ☑ |
 | 4 | Rest of the main lock | `step-4` | ☑ |
 | 5 | Backup lock + tuning | `step-5` | ☑ |
-| 6 | Release + Audit 2 | `step-6` | ☐ |
+| 6 | Release + Audit 2 | `step-6` | ☑ |
 
 "Done when" for each step is in `docs/plan.md`, "The 7 steps".
 
@@ -49,9 +49,9 @@ Bugs, unfinished bits and open questions. Features we chose not to build go in s
 - `exportCatches` skips the catch cap for tagged values the catch list refused: in a scratch run 240,160 characters went to `$.state`, 96,064 of them real catches. Those values never reach the matcher. D-053 caps the export at 4,000,000 characters of JSON, because the host refuses a `$.state` write over 4,194,304. A tagged value past that cap gets a new tag after a restart, which is cosmetic and is the second exception in spec §9 (D-065). The `tags` map itself has no cap, so it still grows for the worker's life.
 - Windows reads about 0.5 s per item, so a session with a list spends about 1 s at start, for the index and the list.
 - Audit 1 ran before the last fixes. `/security-review` and `/code-review high` covered the step's code, then the too-long warning, the `constructor` fix and D-053 went in, and neither audit was run again on those. They were tested instead: 8 reverts on a scratch copy, each caught by the new tests.
-- `claude plugin validate` passes, but warns that `plugin/README.md` has no marketplace install line. That comes with the marketplace in step 6.
+- Closed in step 6: `plugin/README.md` now has the marketplace install line, and `claude plugin validate . --strict` and `./plugin --strict` pass. The one warning left is a missing icon, which only matters for a directory submission.
 
-- Step 5 (backup lock) leftovers: spike S6 (does Claude Code show a settings hook's `systemMessage` or stderr?) was run under `claude -p`, where neither shows, and by hand in the interactive terminal, where a blocked prompt does show ("UserPromptSubmit operation blocked by hook: secret-shield (backup lock) ..."). VS Code and the desktop app were not checked. Node 20 as the lowest Node is a guess: the build was only run on Node 24.
+- Step 5 (backup lock) leftovers: spike S6 (does Claude Code show a settings hook's `systemMessage` or stderr?) was run under `claude -p`, where neither shows, and by hand in the interactive terminal, where a blocked prompt does show ("UserPromptSubmit operation blocked by hook: secret-shield (backup lock) ..."). VS Code and the desktop app were not checked. Node 20 as the lowest Node is a guess: step 6 added a CI job (`backup-node`) that runs the backup lock under Node 20 and 22 on Linux and Windows; read its first result before trusting the floor (Node 20 is also past its end of life).
 - `clearLines()` on the checker does nothing since the repeated-line memory was removed (D-074). It stays because many tests and `tools/measure/run.ts` call it; removing it is a cleanup for later. The test titles that named the memory were reworded (titles only).
 - The backup lock on Windows with saved secrets starts PowerShell for each hook that acts (about 1 s each, about 2 s per tool call while the main lock is down). A cache would put a hash or a key on disk (R-09). Reported in spec §22, not fixed.
 - A value marked harmless for one session only (`/redact allow <tag>`) is not visible to the backup lock; it may refuse what the main lock allowed (spec §22).
@@ -66,11 +66,19 @@ Bugs, unfinished bits and open questions. Features we chose not to build go in s
 - After a mistaken `/redact add <value>`, a scratch run with masking showed the value gone from the next request but still in the transcript file; the real plugin's run found it in no file. The difference wasn't traced, so the message still says to rotate.
 - The `@` copy's path holds `secret-shield`, so the model can tell it is a copy. Its Read of the real file is hidden, so nothing leaks.
 - A failed store read can take 20 s, and the retry runs inside a hook, so that row waits.
-- Doctor can't see the plugin's tier, and "Managed" is read from the managed settings holding our `secretShield` or `enabledPlugins` key. `tests/doctor-managed-real.test.ts` checks that against a real managed file in CI.
+- Step 6: doctor reports the plugin's tier by watching its own `$.command.list()` call pass a `command.list` hook (`next.origin.tier`). A `claude -p` run on 2.1.316 (Windows) printed `Plugin tier: user` with `--plugin-dir` and from a marketplace install, where the debug log says `aegiscontext@aegiscontext` and `next.origin.plugin` holds the bare name. `prepend` was not seen. "Managed" is read from the managed settings holding our `aegisContext` key or enabling our own plugin; `tests/doctor-managed-real.test.ts` checks that against a real managed file in CI, and now also that `prompt.compose` does not reach a user plugin under the real guard.
+- The guard warning itself (R-05a) was seen under the real guard for the first time in CI run 41339214316, on all three systems: `$.ui.log` reaches Claude Code's debug log, and the kit requires it in a guarded scenario that sent a request and forbids it in an org run (D-088).
+- The guard's Team or Enterprise trigger was never measured: CI seats the guard with a managed file. In the binary the login only decides whether the guard is seated, so what follows should be the same.
+- The backup lock is not run against the `skill-text` door: it is in neither `BACKUP_INSIDE` nor `BACKUP_OUTSIDE`, so whether it covers skill text is not known.
+- A wrong `<MARKETPLACE-FOLDER>` was tried with the snippet's settings in a scratch user settings file, not a managed one (D-020): no plugin loaded, and only the debug log said so. The real managed path should behave the same; not measured.
 - `--always` on a value whose store save fails stays harmless for the session only, and says so.
 
 - With a failed store read, rows go through with only the shape checks until a retry works, under the default `allow`: a saved secret with no shape is sent, with a warning. Seen on CI when PowerShell took over 20 s in a cut-down environment; a normal environment read in about 0.2 s (D-045).
 - The `@` context fallback (engine attaches nothing for the copy) only has a hook test: the short-path case it was written for turned out to need the long path instead.
+
+- Step 6, measured in CI (green on all three systems): `leak-test:org` 0 of 91 fakes, plugin in tier `prepend`; `leak-test:guarded` matches `GUARDED_OPEN` (`claude-md`, `hook-context`; `mention-file` clean; compaction summary held by the resume check); `backup-node` passes under Node 20 and 22 on Linux and Windows. Still open: (1) the README install job in `.github/workflows/release.yml` needs the `release` branch to exist and be the default; until then it fails on a tag. (2) The `uninstall-real` run on macOS found that a marker file stays behind after the store is emptied; the documented command now removes the data folder too, and CI passes on all three systems.
+- Step 6, not part of this step: the owner's hand checks (VS Code, desktop app and its version, `outbound: ask`, `/redact` after `/clear`), the two weeks of daily use, the real-API run, reports to Anthropic, a trademark register search for AegisContext, the doubled `$.ui.log` prefix and the other cosmetic items, Anthropic's directory submission, a `/redact` command to remove one saved value. The repo is renamed and public, `origin` points at the new name, and private vulnerability reporting is on (checked 2026-11-01). After the merge: create `release` from `develop` and set it as the default branch, then tag `v0.1.0-rc.1` at its tip (the README install job refuses any other commit). The old `secret-shield` folder is deleted from the owner's PC, so saved values need adding again; its settings had no hooks left.
+- Step 6: seven worker kills in one session did not unload the plugin (findings, `budget-repeat-many`); the docs' claim of unloading was not reproduced.
 
 ## Gotchas
 
@@ -129,6 +137,9 @@ Platform and tooling facts learned so far (from the old `lessons.md`).
 - `Read`, `Write`, `Edit`, `NotebookEdit` and the task tools are local tools that `outbound` does not check (`LOCAL_TOOLS`, `src/core/outbound.ts`). To see the `outbound` dialog by hand, a Bash, WebFetch or connected-tool call must carry a token the model wrote itself; models refuse a split-token prompt.
 - In the interactive terminal, Claude Code echoes a prompt the backup lock blocked in full ("Original prompt: ..."), so the blocked secret is on screen and may reach its transcript.
 - Under `claude plugin test`, a pane stays mounted after the plugin closes it: `unmount()` it before mounting the same pane again.
+- A hold test that reaches `turn.step` must fire `prompt.compose` first, or it reads as a guarded machine and is refused (D-087).
+- A `turn.step` hook that answers without `next` must stream a `text` and a `stop` chunk. The engine reads the stream, not the return value; a bare return exits 1 with "Execution error" (D-087). `claude plugin test` does not show this, only a real run does.
+- `$.ui.log` lines reach Claude Code's debug log (`--debug-file`) even under `claude -p`, where the screen shows nothing.
 - Slash-command text and `$.ui.log` lines get a `secret-shield:` prefix from the display, so any message that starts with it shows it twice. Changing it also changes toasts and warnings (`warn.ts`).
 
 ## Session notes
@@ -200,3 +211,14 @@ Newest last, 3–5 lines each: what exists now and what the next session needs.
 - Checked: local tests, typechecks, validate, `claude plugin test` (144), leak tests (backup 0 of 49 seen, limits 42 of 42 seen), and CI on 3 OSes (run 41319320239, six jobs green). The first CI run failed only on the MCP door under safe mode (script now skips it).
 - Hand tests in the terminal: add, learn, paste and read, observe banner, resume hold, backup lock alone and standing down all passed. They found the `/redact learn` short-value bug (fixed, two tests). Parked by the owner: `outbound: ask` dialog (built, not hand-tested), VS Code, desktop app. Decisions D-068 to D-080.
 - Next: step 6 (release) from `develop` after the merge; `/security-review` and `/code-review high` before its `/ship`.
+
+### 2026-11-02: outside review checked, step 6
+- Every finding was checked against the repo, the 2.1.316 binary, the CI log and scratch runs. Fixed: `hold` refuses a guard pass-over (D-087); the warning names hook context, reaches the log and is proven by the kit; the docs' "and with"; the org run builds from a real archive (D-088). New: `npm run leak-test:guarded-hold`, `--hold` on the kit, a CI step.
+- The owner approved the test changes: `tests/guard-check.test.ts`'s word list, and `prompt.compose` setup in two `lock.test.ts` tests.
+- A real run against the mock found that a `turn.step` hold must stream its answer; the two older holds had the same bug, and all three are fixed (D-087).
+- The owner reported `/code-review high` and `/verify` complete and asked to ship. `leak-test:guarded`, `:org` and `:guarded-hold` first run on this code in the PR's CI.
+- Next: the owner merges, then the release steps in `docs/release-checklist.md`.
+
+### 2026-11-02: skill text, after the ship
+- PR #7's first CI run was green on all three systems (run 41339214316): org 0 of 91, guarded 14 of 91, guarded-hold 0 of 14; the warning was seen under the real guard. A push and its PR share a concurrency group, so the push run shows as cancelled.
+- The owner asked for skill text to be fixed before the merge (D-089): the warning, refusal, doctor line, docs and spec name it, and the kit's `skill-text` door measures it. With the door, org and guarded each cover 14 doors and 98 fakes, and hold 3 doors.

@@ -26,7 +26,7 @@ export type ShieldLearnRow = { id: string; file: string; key: string; length: nu
 
 declare module 'claude-code' {
   interface PluginState {
-    'secret-shield': {
+    'aegiscontext': {
       catches: ShieldCatch[]
       resume: ShieldResume
       allowed: string[]
@@ -36,6 +36,10 @@ declare module 'claude-code' {
       addNote: ShieldPaneNote | null
       learnRows: ShieldLearnRow[]
       learnNote: ShieldPaneNote | null
+      /** prompt.compose has run in this session: the events reach the plugin (spec §5.3). */
+      composeSeen: boolean
+      /** The built-in guard warning has been shown this session. */
+      guardWarned: boolean
     }
   }
 }

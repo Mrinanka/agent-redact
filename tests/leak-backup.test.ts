@@ -19,7 +19,7 @@ const standIn = (mode: string): KitOptions['claude'] => ({ cmd: process.execPath
 const MAIN = path.join(os.tmpdir(), 'plugin', 'backup', 'backup', 'main.js')
 
 const PROMPT: Scenario[] = [
-  { name: 'prompt', doors: ['typed'], heldBackup: /secret-shield \(backup lock\): your message holds a secret/, runs: [{ prompt: c => `Note:\n${c.block('typed')}`, script: () => () => ({ kind: 'text', text: 'ok' }) }] },
+  { name: 'prompt', doors: ['typed'], heldBackup: /aegiscontext \(backup lock\): your message holds a secret/, runs: [{ prompt: c => `Note:\n${c.block('typed')}`, script: () => () => ({ kind: 'text', text: 'ok' }) }] },
 ]
 const opts = (mode: string, extra: Partial<KitOptions> = {}): KitOptions => ({ claude: standIn(mode), plugin: null, expect: 'clean', scenarios: PROMPT, timeoutMs: 20_000, ...extra })
 
@@ -33,7 +33,7 @@ test('the user settings are the snippet a person would paste, with a scenario ho
 
 test('the managed file holds the Managed snippet and a setting the tool does not know', () => {
   const c = managedFileContent(MAIN)
-  assert.equal(c.secretShield[MANAGED_PROOF_KEY], true)
+  assert.equal(c.aegisContext[MANAGED_PROOF_KEY], true)
   assert.ok(JSON.stringify(c.hooks).includes('"onFailure":"block"'))
   assert.match(MANAGED_PROOF_NOTICE, /^policy: unknown setting/)
 })

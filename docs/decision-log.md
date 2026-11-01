@@ -106,6 +106,15 @@ Tiny clarifications go under **Minor** at the bottom.
 | D-078 | The targets | accepted | 5 | 19 |
 | D-079 | Doctor finds Node by looking in the PATH folders | accepted | 5 | 15 |
 | D-080 | Plan step 5 item 6 is met by a managed-file run in CI, not a Step 0 VM | accepted | 5 | 19 |
+| D-081 | The final name is AegisContext | accepted | 6 | header, 14, 19 |
+| D-082 | Claude Code's built-in guard: warn once, doctor line, measured in CI; only the organization install fixes it | accepted | 6 | 5.3, 19, 22 |
+| D-083 | Step 6 ships `v0.1.0-rc.1`; the install line points at a `release` branch | accepted | 6 | 19 |
+| D-084 | The organization install is a folder marketplace plus `prependPlugins` that also lists `sec-default@builtin` | accepted | 6 | 5.3, 19 |
+| D-085 | `stable` 2.1.309 joins the tested list from one full-kit run on Windows | accepted | 6 | 4, 20 |
+| D-086 | The stated minimum Claude Code is the oldest tested version, 2.1.309 | accepted | 6 | none |
+| D-087 | Under `on_check_failure: hold`, a guard pass-over refuses the request | accepted | 6 | 5.3, 12, 22 |
+| D-088 | Any one sign seats the guard; the warning names hook context and is proven in CI; the org run uses a real archive | accepted | 6 | 5.3, 22 |
+| D-089 | Skill text is a door, named in the warning and measured under the guard | accepted | 6 | 5.3, 22 |
 
 ## Entry template (short form, from D-018 on)
 
@@ -781,6 +790,71 @@ Tiny clarifications go under **Minor** at the bottom.
 - Why: The words in the plan point at something that does not exist. The managed file run is what D-020 already chose, and it works on the other two systems, which the maintainer's PC cannot test.
 - Cost: it has not run on this PC, and "starting in observe mode" is not part of that run (it runs in safe mode). Both stay open until the first CI run is read.
 - Evidence: `docs/decision-log.md` D-020; `package.json` scripts; `.github/workflows/ci.yml`.
+
+## D-081: The final name is AegisContext
+- Date / Step: 2026-11-01 / 6        Status: accepted (replaces NoCreds, which the step 6 plan had chosen earlier the same day)
+- Decision: Plugin `aegiscontext`, settings key `aegisContext`, environment prefix `AEGISCONTEXT_`, data folder and password-store service `aegiscontext`, repo `Mrinanka/aegiscontext`, doctor `/aegiscontext:doctor`. `/redact` stays. The old working name `secret-shield` is gone from the product; the history in this log and in progress stays as written. Nothing was published under an earlier name.
+- Why: The owner proposed it ("AegisContext, lets check its eligibility") after reading the NoCreds plan, and chose it when shown the risk.
+- Rejected: NoCreds (kept as the recommendation: no tool of that name found, but narrower than what the tool hides). Pausing the name until v0.1.0 (a later rename would touch the saved-values store name and the settings key again).
+- Evidence: `npm view` for `aegiscontext`, `aegis-context` and `@aegiscontext/core`: 404 (free). GitHub search: no repo named `aegiscontext`; 39 for `aegis-context`, among them Aegis-Context-Broker (middleware for IDEs). Web search: "Aegis" is used for a Claude Code secret-detection MCP server (aegis-sec), an LLM secrets firewall (andreaskasper/aegis on Docker Hub) and a Kubernetes secrets store (shieldworks/aegis), so confusion is a risk; the README says in one line that this is a different project. No trademark register was searched; that is on the release checklist for v0.1.0. The name has no "Claude" or "Anthropic".
+
+## D-082: Claude Code's built-in guard: warn once, doctor line, measured in CI; only the organization install fixes it
+- Date / Step: 2026-11-01 / 6        Status: accepted (approved with the step 6 plan); "and with" below is corrected by D-088, and hold is added by D-087
+- Decision: On a machine with managed settings, and with a Team or Enterprise login, Claude Code seats `sec-default@builtin` outermost and routes `prompt.context`, `prompt.attachment`, `prompt.compose`, `session.compact` and the `attachment`, `hook-context` and `compaction` rows of `session.append` past user-tier plugins. The plugin cannot close this (`turn.step` pins `messageCount`). It marks `prompt.compose` in `$.state`, and the first main `turn.step` without the mark warns once and sets a flag; `/redact doctor` shows the tier and the guard state (R-05a). The doors are measured in CI by `npm run leak-test:guarded` and listed in `GUARDED_OPEN`; `npm run leak-test:org` proves the organization install leaves none open.
+- Why: Users must never believe they are protected when they are not (R-05). The leak could not be measured on this PC: the guard seats only when a real managed file exists, and the kit does not write the machine's managed file here (D-020). `CLAUDE_CODE_MANAGED_SETTINGS_PATH` did not redirect the policy folder in a scratch run (the debug log still read the Program Files file and said "not seated").
+- Rejected: Staying silent. A hook that rewrites the messages itself (`turn.step` pins them).
+- Evidence: the 2.1.316 binary strings ("seated by managed prependPlugins at position", "not seated: managed prependPlugins does not list it", the `prependPlugins` description); `tests/guard-check.test.ts`; `plugin/hooks/lock.test.ts` (guard tests; 151 pass under `claude plugin test`); `tests/leak-org.test.ts`. **Measured in CI (run 41329156820 and the next, all green, macOS/Windows/Linux, Claude Code 2.1.316):** `claude-md` and `hook-context` leak 7 of 7 under a user-tier plugin; `mention-file` stayed clean (the plan expected it to leak); the compaction summary is stored raw and the resume check then holds the next message, so the model is not sent it (kit scenario `compaction-held`, found when the first run reported no witness: run 2 made 0 requests). `leak-test:org`: 0 of 91 fakes seen, 13 doors, and the debug log showed the plugin in tier `prepend` and the guard seated by `prependPlugins`, on all three systems. Attachments and the instructions note have no door in the kit.
+
+## D-083: Step 6 ships `v0.1.0-rc.1`; the install line points at a `release` branch
+- Date / Step: 2026-11-01 / 6        Status: accepted (approved with the step 6 plan)
+- Decision: The release candidate first; `v0.1.0` after two weeks of daily use and the hand checks. A new `release` branch is the repo's default, so a plain install gets released code. Step branches still go into `develop`; each release merges `develop` into `release`. The release workflow runs on a `v*` tag, calls CI, runs the README install on three systems and makes a draft release. The maintainer merges and tags; Claude never does.
+- Why: `develop` is the default branch now, so a plain install would give users unreleased code.
+- Rejected: Installing from a tag only (the README line would need a ref syntax that was not verified). Making `develop` stable.
+- Evidence: `tools/release/pack.ts`, `tests/release-pack.test.ts`, `.github/workflows/release.yml`, `tests/docs.test.ts`.
+
+## D-084: The organization install is a folder marketplace plus `prependPlugins` that also lists `sec-default@builtin`
+- Date / Step: 2026-11-01 / 6        Status: accepted
+- Decision: Managed settings carry `extraKnownMarketplaces` (a `directory` source), `enabledPlugins` and `prependPlugins: [aegiscontext@aegiscontext, sec-default@builtin]` (`docs/snippets/managed-plugin.json`). A plugin from GitHub or a git URL counts as a user's, so spec §19's "internal git mirror" no longer reaches `prepend`; it serves the Personal install only. A `directory` marketplace installed in a scratch run with a path holding a space (`tests/install-real.test.ts`); a `file://` git source was refused by `claude plugin marketplace add` and did not resolve from settings either, so the install from git is proven only by the release workflow's README job, from GitHub.
+- Why: The binary's `prependPlugins` text says a list replaces the guard's default seat, so the guard must be listed or it is removed. Evidence of the tier is the debug log (`tier prepend`), which the kit requires.
+- Rejected: Digest-pinned `pluginDigests` (a folder must prove a digest, and a checkout whose line endings changed proves nothing; the kit measures the plain folder first).
+- Evidence: 2.1.316 binary strings; `tools/leak-test/org.ts`; `tests/leak-org.test.ts`. **Measured:** the first CI run of `leak-test:org` seated the plugin in `prepend` from a folder marketplace on macOS, Windows and Linux (the kit makes the run invalid otherwise).
+
+## D-085: `stable` 2.1.309 joins the tested list from one full-kit run on Windows
+- Date / Step: 2026-11-01 / 6        Status: accepted
+- Decision: `TESTED_VERSIONS` gains 2.1.309. The full kit ran from a scratch install of `@anthropic-ai/claude-code@2.1.309` on Windows with `--claude`: the baseline saw 98 of 98 fakes, the plugin run saw 0 of 105 across 15 doors. Not run in CI, nor on macOS or Linux; `docs/tested-versions.md` says so.
+- Why: `stable` is what many people run; a warning at every session start for them would be noise, and the kit says it holds.
+- Rejected: Adding `stable` to the CI pin (a second 320 MB install per job for one older version).
+- Evidence: the run's output (labels and counts only), this session.
+
+## D-086: The stated minimum Claude Code is the oldest tested version, 2.1.309
+- Date / Step: 2026-11-01 / 6        Status: accepted
+- Decision: `README.md` and `docs/personal.md` say 2.1.309 or later, not 2.1.275.
+- Why: 2.1.275 had no source anywhere in the repo, and nothing has been tested below 2.1.309. The owner approved the recommendation after the review check.
+- Rejected: Testing 2.1.275 (a passing install line would still not show the hooks work there).
+- Evidence: `git grep` found 2.1.275 only in those two files; `src/core/versions.ts`; the install line's text is in the 2.1.309 Windows binary, which was searched but not run.
+
+## D-087: Under `on_check_failure: hold`, a guard pass-over refuses the request
+- Date / Step: 2026-11-02 / 6        Status: accepted
+- Decision: A main `turn.step` with no `prompt.compose` seen is refused when `on_check_failure` is `hold` (observe holds nothing), every time, with an answer that says why and how to fix it. The warning still shows once. A failed read of the flags is no sign of a pass-over, so it never stops a request. Spec §5.3, R-05a, §12 and §22 updated. This adds to D-082, which never considered it; it does not reopen it.
+- Why: `hold` is a choice to fail closed, and managed docs recommend it, yet raw instruction text went out in the same request the warning fired for (`register.ts`). The owner approved the recommendation after the review check.
+- Rejected: Documenting the gap only (`hold` would still not mean hold).
+- Cost: A user-tier install under `hold` on a guarded machine sends nothing until it moves to the organization install or to `allow`. A Claude Code change that stopped `prompt.compose` coming first would stop those users too; `leak-test:org` forbids the warning, so CI would show it. Two tests in `plugin/hooks/lock.test.ts` gained `prompt.compose` setup (the owner approved; assertions unchanged), because a hold test with no compose now reads as a guarded machine.
+- Found on the way: a `turn.step` hook that answers without `next` must stream its text and a stop chunk. The engine reads the stream, not the return, so the two older holds in `register.ts` (the resumed history, a failed check) stopped the request but showed "Execution error" with exit 1, and no test or kit run had reached them. All three now stream.
+- Evidence: a real run of Claude Code 2.1.316 against the kit's mock, with a scratch copy that never marks `prompt.compose`: 0 requests, and the debug line "a hook answered without the request; the loop read what it streamed". `leak-test:guarded-hold` is the proof under the real guard.
+
+## D-088: Any one sign seats the guard; the warning names hook context and is proven in CI; the org run uses a real archive
+- Date / Step: 2026-11-02 / 6        Status: accepted
+- Decision: (1) Docs and spec say managed settings, a managed MCP server file, or a Team or Enterprise login, any one enough. (2) The warning and doctor line name hook context and say "instruction files", not "project instruction files". (3) The pass-over reaches the plugin log, and the kit requires the warning in a guarded scenario that sent a request and forbids it in an org run. (4) The org run's marketplace folder is a real `git archive`, unpacked; `docs/managed.md` names `aegiscontext-<tag>` as that folder.
+- Why: An outside review, each point checked. The docs' "and with" was wrong, so a Team user with no managed settings could think themselves safe. `hook-context` leaked 7 of 7 and went unnamed. The warning had never been seen in CI. The documented folder held no marketplace.
+- Rejected: Requiring the warning per run (`compaction-held` run 2 and the resume door stop before any step, so they can't show it).
+- Evidence: the 2.1.316 binary's seat function (`a||l||f`) and its strings, including "this machine has a managed MCP server file"; `claude-code.d.ts` `PromptContextInput` ("`@` imports included"); a scratch run with the sign removed showed the warning in the debug log, not on stdout and not in the plugin log; a scratch run with the snippet's settings pointed at the documented folder logged "Skipping orphaned enabledPlugins entry" and loaded no plugin, with the nested folder loading it.
+
+## D-089: Skill text is a door, named in the warning and measured under the guard
+- Date / Step: 2026-11-02 / 6        Status: accepted
+- Decision: The warning, the refusal, the doctor line, the docs and spec §5.3 and §22 name skill text. The kit gains a `skill-text` door: a project skill read through the Skill tool. It joins `ORG_SCENARIOS` and `GUARDED_OPEN`, so it must stay clean in the org run, leak under the guard and be refused under `hold`.
+- Why: The guard's list passes the Skill tool's `tool-message` rows over, and under `allow` nothing told the person. It was the one open item where a real secret could reach the model with no warning. The owner approved fixing it before the tag.
+- Rejected: Recording it in Known issues only.
+- Evidence: the 2.1.316 binary's `register` of `sec-default` (`isSkillRow`); on Windows, with no guard, the door shows 7 of 7 fakes with no tool and 0 of 7 with the plugin. D-087's and D-088's kit runs were green on all three systems in CI run 41339214316: org 0 of 91, guarded 14 of 91 (7 at each listed door), hold 0 of 14.
 
 ---
 

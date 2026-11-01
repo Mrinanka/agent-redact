@@ -139,7 +139,7 @@ test('placeholdersIn gives each one its line and tag', () => {
 
 // ---- self-protection ----------------------------------------------------------------------
 
-const roots: Roots = { own: ['C:\\Users\\me\\.claude\\secret-shield', 'C:\\plugins\\shield'], config: 'C:\\Users\\me\\.claude', caseless: true }
+const roots: Roots = { own: ['C:\\Users\\me\\.claude\\aegiscontext', 'C:\\plugins\\shield'], config: 'C:\\Users\\me\\.claude', caseless: true }
 
 test('paths are normalized: separators, dots and case on Windows', () => {
   assert.equal(normalize('C:\\a\\b\\..\\c\\.\\d', true), 'c:/a/c/d')
@@ -147,8 +147,8 @@ test('paths are normalized: separators, dots and case on Windows', () => {
 })
 
 test("the tool's own folders are protected however they are spelled, and a look-alike is not", () => {
-  assert.equal(isProtected('C:\\Users\\me\\.claude\\secret-shield\\log\\x.jsonl', roots), true)
-  assert.equal(isProtected('c:/users/ME/.claude/x/../secret-shield/store/index.dpapi', roots), true)
+  assert.equal(isProtected('C:\\Users\\me\\.claude\\aegiscontext\\log\\x.jsonl', roots), true)
+  assert.equal(isProtected('c:/users/ME/.claude/x/../aegiscontext/store/index.dpapi', roots), true)
   assert.equal(isProtected('C:\\plugins\\shield', roots), true)
   assert.equal(isProtected('C:\\plugins\\shield-other\\a', roots), false)
 })
@@ -160,7 +160,7 @@ test("Claude Code's settings files are recognised", () => {
 
 test('a change to a kill switch is refused; any other settings change passes', () => {
   const before = JSON.stringify({ permissions: { allow: [] } })
-  for (const key of ['disableAllHooks', 'allowManagedHooksOnly', 'hooks', 'enabledPlugins', 'secretShield']) {
+  for (const key of ['disableAllHooks', 'allowManagedHooksOnly', 'hooks', 'enabledPlugins', 'aegisContext']) {
     assert.equal(blockedSettingsChange(before, JSON.stringify({ permissions: { allow: [] }, [key]: true })), key)
   }
   assert.equal(blockedSettingsChange(before, JSON.stringify({ env: { CLAUDE_CODE_SIMPLE: '1' } })), 'CLAUDE_CODE_SIMPLE')
@@ -168,24 +168,24 @@ test('a change to a kill switch is refused; any other settings change passes', (
 })
 
 test('removing a kill switch is refused too, and an unreadable result that names one is refused', () => {
-  assert.equal(blockedSettingsChange(JSON.stringify({ secretShield: { mode: 'enforce' } }), '{}'), 'secretShield')
+  assert.equal(blockedSettingsChange(JSON.stringify({ aegisContext: { mode: 'enforce' } }), '{}'), 'aegisContext')
   assert.equal(blockedSettingsChange('{}', '{ "disableAllHooks": true, // comment\n}'), 'disableAllHooks')
   assert.equal(blockedSettingsChange('', '{ not json'), undefined)
 })
 
 test('a shell command that changes a protected path or a kill switch is refused; reading is not', () => {
   for (const c of [
-    'rm -rf "C:/Users/me/.claude/secret-shield"',
-    'echo x > C:\\Users\\me\\.claude\\secret-shield\\log\\a',
+    'rm -rf "C:/Users/me/.claude/aegiscontext"',
+    'echo x > C:\\Users\\me\\.claude\\aegiscontext\\log\\a',
     'Remove-Item C:\\plugins\\shield\\hooks\\register.ts',
     `echo '{"disableAllHooks":true}' > .claude/settings.local.json`,
     'sed -i s/a/b/ .claude/settings.json',
-    'claude plugin disable secret-shield',
-    'claude plugin uninstall secret-shield',
-    'security delete-generic-password -s secret-shield -a index',
-    'secret-tool clear service secret-shield account index',
+    'claude plugin disable aegiscontext',
+    'claude plugin uninstall aegiscontext',
+    'security delete-generic-password -s aegiscontext -a index',
+    'secret-tool clear service aegiscontext account index',
   ]) assert.ok(shellChangesProtected(c, roots), c)
-  for (const c of ['cat C:/Users/me/.claude/secret-shield/log/a', 'grep disableAllHooks docs/spec.md', 'npm test > out.txt', 'cat .claude/settings.json', 'git commit -m "note"']) assert.equal(shellChangesProtected(c, roots), undefined, c)
+  for (const c of ['cat C:/Users/me/.claude/aegiscontext/log/a', 'grep disableAllHooks docs/spec.md', 'npm test > out.txt', 'cat .claude/settings.json', 'git commit -m "note"']) assert.equal(shellChangesProtected(c, roots), undefined, c)
 })
 
 // ---- .env -----------------------------------------------------------------------------------

@@ -16,8 +16,8 @@ import { scrubResponse, withholdResponse } from './scrub.js';
 /** Over this a prompt or a tool call is not scanned (R-12): it counts as a failed check. */
 export const MAX_TEXT = 4 * 1024 * 1024;
 const MAX_FILE_CHARS = 4_000_000;
-const WITHHELD = '[secret-shield withheld this content: a check could not finish]';
-const PREFIX = 'secret-shield (backup lock)';
+const WITHHELD = '[aegiscontext withheld this content: a check could not finish]';
+const PREFIX = 'aegiscontext (backup lock)';
 const isObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
 const text = (v) => (typeof v === 'string' ? v : '');
 const named = (hits) => [...new Set(hits.map(h => `${h.label} #${h.tag}`))].slice(0, 5).join(', ');
@@ -76,13 +76,13 @@ function protect(env, tool, e) {
     if (path) {
         const real = landing(env, path);
         if (isProtected(path, env.roots) || isProtected(real, env.roots))
-            return "that file belongs to secret-shield, and Claude can't change it";
+            return "that file belongs to aegiscontext, and Claude can't change it";
         if (isSettingsFile(path, env.roots) || isSettingsFile(real, { ...env.roots, config: landing(env, env.roots.config) })) {
             const before = env.readFile(path) ?? '';
             const after = tool === 'Write' ? text(e.content) : applyEdit(before, text(e.old_string), text(e.new_string), e.replace_all === true);
             const key = after === undefined ? undefined : blockedSettingsChange(before, after);
             if (key)
-                return `that change touches ${key}, which could switch secret-shield off. Only you can change it`;
+                return `that change touches ${key}, which could switch aegiscontext off. Only you can change it`;
         }
     }
     else if (tool === 'Bash' || tool === 'PowerShell') {

@@ -8,9 +8,11 @@ import { addToList, osOf, storeReport } from './backends.ts'
 import { createChecker } from './lib/checker/index.ts'
 import { now } from './lib/core/decoder.ts'
 import { parseEnv, startsTicked } from './lib/core/envfile.ts'
+import { managedInstall } from './lib/core/guard-check.ts'
 import { reportText, runSelfCheck } from './lib/core/selfcheck.ts'
 import { isTested } from './lib/core/versions.ts'
 import { PLUGIN_VERSION } from './marker.ts'
+import { guardLines } from './guard.ts'
 import { writeLog } from './log-file.ts'
 import { configDir, dataDir, joinPath } from './paths.ts'
 import { liftResume } from './resume.ts'
@@ -20,9 +22,9 @@ import { clearGuardBlock, lastGuardBlock } from './tools.ts'
 import { learnValues } from './panes.tsx'
 
 export const COMMAND = 'redact'
-export const DOCTOR = 'secret-shield:doctor'
-export const ADD_PANE = 'secret-shield-add'
-export const LEARN_PANE = 'secret-shield-learn'
+export const DOCTOR = 'aegiscontext:doctor'
+export const ADD_PANE = 'aegiscontext-add'
+export const LEARN_PANE = 'aegiscontext-learn'
 
 const USAGE = 'Use: /redact, /redact add [--label name], /redact learn, /redact allow [tag] [--always], /redact backup [managed], /redact self-check [--report], /redact doctor.'
 const MAX_DEPTH = 3
@@ -45,7 +47,7 @@ async function status($: EngineInterface): Promise<string> {
   const hidden = await hiddenSummary($)
   const placed = await placedFiles($)
   const lines = [
-    `secret-shield ${PLUGIN_VERSION}: main lock running. ${await backupLine($)}`,
+    `aegiscontext ${PLUGIN_VERSION}: main lock running. ${await backupLine($)}`,
     `Mode: ${rt.settings.mode === 'observe' ? 'OBSERVE, secrets are NOT being hidden' : 'enforce'}.`,
     `Hidden this session: ${hidden.length}.`,
     ...hidden.slice(-20).map(h => `  ${h.label}${h.hint ? ` ...${h.hint}` : ''} in ${h.where} #${h.tag}`),
@@ -127,7 +129,7 @@ async function add($: EngineInterface, rest: string): Promise<string> {
     return 'Nothing was saved. Never put a secret on the command line: Claude Code keeps that line in its transcript, so consider rotating that value. Run /redact add alone, and paste the secret into the box.'
   }
   if ((await $.session.surfaces()).length === 0) return '/redact add needs an interactive session, because the secret goes into a box on screen.'
-  await $.state.set({ plugin: 'secret-shield', key: 'addNote' }, m[1] ? { text: `Label: ${m[1]}`, isError: false } : null)
+  await $.state.set({ plugin: 'aegiscontext', key: 'addNote' }, m[1] ? { text: `Label: ${m[1]}`, isError: false } : null)
   await $.ui.open({ id: ADD_PANE, title: 'Add a secret', focus: true, closeOnEscape: true, rows: 7 })
   return 'Paste the secret into the box. It stays out of the chat.'
 }
@@ -158,8 +160,8 @@ async function learn($: EngineInterface): Promise<string> {
     }
   }
   if (rows.length === 0) return 'No values found in files matching secret_files.'
-  await $.state.set({ plugin: 'secret-shield', key: 'learnRows' }, rows)
-  await $.state.set({ plugin: 'secret-shield', key: 'learnNote' }, null)
+  await $.state.set({ plugin: 'aegiscontext', key: 'learnRows' }, rows)
+  await $.state.set({ plugin: 'aegiscontext', key: 'learnNote' }, null)
   await $.ui.open({ id: LEARN_PANE, title: 'Learn secrets', focus: true, closeOnEscape: true })
   return `Found ${rows.length} values. Tick the ones to remember.`
 }
@@ -230,8 +232,10 @@ export async function doctor($: EngineInterface): Promise<string> {
   const node = await nodeVersion($)
   const nodeMajor = node ? Number(node.split('.')[0]) : 0
   const hooksSet = mine.found || managedHooks.found
+  const guard = await guardLines($, Object.keys(policy).length > 0)
   const fix: string[] = []
   if (!isTested(version)) fix.push('Run /redact self-check on this Claude Code version.')
+  if (guard.fix) fix.push(guard.fix)
   if (store?.status === 'missing') fix.push('Install a password store (Linux: libsecret-tools and a keyring) to keep saved secrets.')
   if (store?.status === 'locked') fix.push('Unlock your password store; saved secrets are not being hidden until then.')
   if (rt.problems.length > 0) fix.push('Fix the settings problems below.')
@@ -243,8 +247,8 @@ export async function doctor($: EngineInterface): Promise<string> {
   if (state?.installed && !state.current) fix.push('The backup lock copy is out of date; it refreshes at the next session start, or run /redact backup now.')
   return [
     `Claude Code: ${version} (${isTested(version) ? 'tested' : 'not on the tested list'}).`,
-    `Install: ${'secretShield' in policy || 'enabledPlugins' in policy ? 'Managed settings are present' : 'Personal mode'}.`,
-    'Plugin tier: not visible to the plugin; in Personal mode it is user.',
+    `Install: ${managedInstall(policy) ? 'Managed settings are present' : 'Personal mode'}.`,
+    ...guard.lines,
     'Main lock hooks: running (this answer came from a hook).',
     `Password store: ${store ? `${store.status}, ${store.count} saved` : 'could not be checked'}.`,
     `Backup lock: ${mine.found ? 'hooks found in user settings' : managedHooks.found ? 'hooks found in managed settings' : 'not installed'}${state?.installed ? `; copy ${state.copyVersion ?? '?'}, ${state.current ? 'current' : 'out of date'}` : ''}.`,
@@ -274,7 +278,7 @@ export async function redactCommand($: EngineInterface, args: string): Promise<s
 
 /** Claude can't reach these through a tool either (R-16). */
 export function isOwnCommandCall(tool: string, input: Record<string, unknown>): boolean {
-  return tool === 'Skill' && typeof input.skill === 'string' && /^(?:secret-shield:)?(?:redact|doctor)\b/.test(input.skill)
+  return tool === 'Skill' && typeof input.skill === 'string' && /^(?:aegiscontext:)?(?:redact|doctor)\b/.test(input.skill)
 }
 
 export { now }

@@ -58,7 +58,7 @@ test('parseMarker takes JSON objects only', () => {
 
 test('markerPath refuses a session id that could leave the folder', () => {
   const dir = path.join(os.tmpdir(), 'cfg')
-  assert.equal(markerPath(dir, 'abc-123_X'), path.join(dir, 'secret-shield', 'markers', 'abc-123_X.json'))
+  assert.equal(markerPath(dir, 'abc-123_X'), path.join(dir, 'aegiscontext', 'markers', 'abc-123_X.json'))
   for (const bad of ['../x', '..\\x', 'a/b', '', 'x'.repeat(129), 'a b', undefined, 42, null]) assert.equal(markerPath(dir, bad as never), undefined, String(bad))
 })
 

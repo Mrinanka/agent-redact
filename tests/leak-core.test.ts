@@ -13,7 +13,7 @@ test('leak-test:core names every scenario except mention-file and resume (steps 
   const script = pkg.scripts['leak-test:core'] as string
   const named = [...script.matchAll(/--only ([a-z-]+)/g)].map(m => m[1] as string).sort()
   const expected = SCENARIOS.map(s => s.name).filter(n => n !== 'mention-file' && n !== 'resume').sort()
-  assert.equal(expected.length, 11)
+  assert.equal(expected.length, 12)
   assert.deepEqual(named, expected)
   assert.match(script, /--plugin plugin/)
 })

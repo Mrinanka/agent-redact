@@ -51,7 +51,7 @@ async function readSources($: EngineInterface): Promise<{ sources: Partial<Recor
   for (const name of SOURCES) {
     try {
       const all = (await $.settings.read({ source: name })) as Record<string, unknown>
-      sources[name] = all.secretShield
+      sources[name] = all.aegisContext
     } catch {
       unreadable.push(name)
     }
@@ -78,7 +78,7 @@ function forStore(s: Settings): Settings {
 
 async function readCatches($: EngineInterface): Promise<CatchEntry[]> {
   try {
-    const { value } = await $.state.get({ plugin: 'secret-shield', key: 'catches' })
+    const { value } = await $.state.get({ plugin: 'aegiscontext', key: 'catches' })
     return Array.isArray(value) ? (value as CatchEntry[]) : []
   } catch {
     return []
@@ -169,7 +169,7 @@ export async function saveCatches($: EngineInterface, rt: Runtime): Promise<void
   const version = rt.redactor.persistVersion
   if (version === rt.savedVersion) return
   try {
-    await $.state.set({ plugin: 'secret-shield', key: 'catches' }, rt.redactor.exportCatches())
+    await $.state.set({ plugin: 'aegiscontext', key: 'catches' }, rt.redactor.exportCatches())
     rt.savedVersion = version
   } catch {
     // Not fatal, and the version stays behind, so the next row tries again (R-12: say so and log it).

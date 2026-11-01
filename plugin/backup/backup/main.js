@@ -77,6 +77,6 @@ try {
     await main();
 }
 catch {
-    process.stderr.write('secret-shield backup lock: could not run\n');
+    process.stderr.write('aegiscontext backup lock: could not run\n');
     process.exitCode = 1;
 }

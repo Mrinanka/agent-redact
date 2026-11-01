@@ -9,8 +9,8 @@ Settings that run the backup lock (spec §5.2). They are built by `src/core/snip
 
 Replace the placeholders:
 
-- `<CONFIG-FOLDER>/secret-shield/backup/backup/main.js`: where `/redact backup` copied the build (the command prints the real path). An administrator who installs it some other way puts the folder `plugin/backup/` anywhere that holds `secret-shield` in its path and points here at its `backup/main.js`.
-- `<PATH-TO-MANAGED-SETTINGS-COPY>.json`: only for settings that reach machines by MDM or from the server, which a process cannot read. A copy of that policy (the same JSON, with its `secretShield` key). Leave the two arguments out when the policy is a `managed-settings.json` file on the machine.
+- `<CONFIG-FOLDER>/aegiscontext/backup/backup/main.js`: where `/redact backup` copied the build (the command prints the real path). An administrator who installs it some other way puts the folder `plugin/backup/` anywhere that holds `aegiscontext` in its path and points here at its `backup/main.js`.
+- `<PATH-TO-MANAGED-SETTINGS-COPY>.json`: only for settings that reach machines by MDM or from the server, which a process cannot read. A copy of that policy (the same JSON, with its `aegisContext` key). Leave the two arguments out when the policy is a `managed-settings.json` file on the machine.
 
 Node must be on the PATH of the machine. `/redact doctor` says whether it is, and whether the hooks set `onFailure`.
 

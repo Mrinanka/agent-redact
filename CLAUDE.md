@@ -1,4 +1,4 @@
-# secret-shield (working name)
+# AegisContext
 
 An open-source (Apache-2.0) Claude Code plugin (mod) that hides secrets before the model sees them.
 Spec: @docs/spec.md. Plan: @docs/plan.md. Progress: docs/progress.md.

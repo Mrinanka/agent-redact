@@ -19,7 +19,7 @@ const PW = 'Autumn' + '2026xk'
 const needles = [...needlesFor('gh', GH), ...needlesFor('aws', AWS), ...needlesFor('pw', PW)]
 
 const CONFIG = path.join(os.tmpdir(), 'cfg-act')
-const DATA = path.join(CONFIG, 'secret-shield')
+const DATA = path.join(CONFIG, 'aegiscontext')
 
 type Opts = { settings?: Partial<Settings>; files?: Record<string, string>; registered?: string[]; ms?: number; unreadable?: string[] }
 
@@ -175,8 +175,8 @@ test('self-protection: a forged marker write, a settings kill switch and a store
   const settings = path.join(CONFIG, 'settings.json')
   assert.ok(denied(decide(pre('Write', { file_path: settings, content: JSON.stringify({ disableAllHooks: true }) }), env({ files: { [settings]: '{}' } })).answer), 'settings')
   assert.ok(denied(decide(pre('Bash', { command: `rm -rf "${path.join(DATA, 'store')}"` }), env()).answer), 'store folder')
-  assert.ok(denied(decide(pre('Bash', { command: 'security delete-generic-password -a index -s secret-shield' }), env()).answer), 'keychain')
-  assert.ok(denied(decide(pre('Bash', { command: 'claude plugin disable secret-shield' }), env()).answer), 'plugin')
+  assert.ok(denied(decide(pre('Bash', { command: 'security delete-generic-password -a index -s aegiscontext' }), env()).answer), 'keychain')
+  assert.ok(denied(decide(pre('Bash', { command: 'claude plugin disable aegiscontext' }), env()).answer), 'plugin')
 })
 
 test('self-protection stays on in observe mode', () => {

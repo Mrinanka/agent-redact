@@ -1,0 +1,62 @@
+# Verify it yourself
+
+The maintainers cannot test inside every organization, so everything needed to test ships with the tool. None of it needs an API key or the network.
+
+## In a session
+
+| Command | What it shows |
+|---|---|
+| `/redact self-check` | Built-in cases run in seconds and show pass or fail. `--report` saves a result you can share; it holds no secrets. |
+| `/redact doctor` | The environment: Claude Code version (tested or not), Personal or Managed, the plugin's tier, the built-in guard, the password store, the backup lock, Node, the marker and the settings. |
+
+## The leak test kit
+
+A small local server pretends to be the model API. It plays a scripted conversation that makes Claude Code read files, run commands, use `@` files, compact and run subagents, all holding planted **fake** secrets. Claude Code is pointed at it with `ANTHROPIC_BASE_URL`. The server records every request Claude Code sends and searches the recording for the fakes. Any hit is a failure. A recording proxy refuses and logs every network attempt, and any attempt makes the run invalid. The kit uses Node built-ins only.
+
+Each door has a witness, a harmless token planted beside the fakes. A door whose witness never arrived proves nothing, so it is reported **invalid**, never clean.
+
+### Run it
+
+You need the repository, Node 24 (`.nvmrc`), and the pinned Claude Code (about 320 MB, its own lockfile):
+
+```
+npm ci --ignore-scripts
+npm ci --ignore-scripts --prefix tools/leak-test/claude-pin
+```
+
+Then:
+
+| Command | What it proves |
+|---|---|
+| `npm run leak-test:baseline -- --require-pinned` | The kit can see: with an empty plugin, every planted fake must be seen. If any is not, the kit is blind and nothing else means anything. |
+| `npm run leak-test` | With the plugin in `plugin/`, no fake may be seen at any door. `-- --only <scenario>` runs one. |
+| `npm run leak-test:backup` | The backup lock alone (settings hooks, plugin not loaded) hides the doors it covers. |
+| `npm run leak-test:backup-limits` | The doors the backup lock does **not** cover leak, as the docs say. The list of limits is proven, not claimed. |
+
+Exit codes: 0 pass, 1 a fake was seen (or a baseline was blind), 2 the run was invalid or badly called.
+
+Three more runs write the **machine's managed settings file** while they run, so they refuse to start without `--allow-managed-file` (the npm scripts pass it). They run in CI. Run them by hand only on a test machine, and note that on Windows you need an administrator and on macOS and Linux `sudo -n` must work. The kit never overwrites a managed file that is already there and removes its own when done.
+
+| Command | What it proves |
+|---|---|
+| `npm run leak-test:managed` | The backup lock installed through managed settings still runs in safe mode. |
+| `npm run leak-test:org` | The organization install (a folder marketplace, `prependPlugins`) leaves no door open. Each run's debug log must show the plugin in tier `prepend`; a log without that makes the run invalid. |
+| `npm run leak-test:guarded-hold` | The same machine with `on_check_failure: hold`: the doors that leak above must be refused, with no request sent. It writes the machine's managed settings file, so it runs in CI. |
+| `npm run leak-test:guarded` | The plugin as a user plugin on a machine with managed settings: the doors Claude Code's built-in guard passes over must leak, and every other door must stay clean. |
+
+### What the kit does not prove
+
+- It tests the pinned Claude Code (see [tested-versions.md](tested-versions.md)), against a pretend model. It does not call the real API.
+- No network traffic is **proven** only on Linux, where a no-network run is part of CI. On Windows and macOS the proxy trap sees only traffic that honours proxy settings.
+- The VS Code extension and the desktop app run their own copy of Claude Code; they were checked by hand once per release ([release-checklist.md](release-checklist.md)), not by the kit.
+
+## A trial in your organization
+
+1. Run `npm run leak-test:org` on one managed test machine.
+2. Roll out in `observe` mode to a small group and review the log for false alarms.
+3. Tune with `allow` and `rules.off`.
+4. Switch to `enforce`.
+
+## Numbers
+
+Catch rate, false-alarm rate and speed for this release: [scores.md](scores.md).

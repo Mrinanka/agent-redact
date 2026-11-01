@@ -1,7 +1,7 @@
 // One run of the backup lock for one hook event: settings, checker, saved values, decision, log.
 // Loaded by main.ts only after the marker said the main lock is not alive, so standing down costs little.
 //
-// The log goes to <config>/secret-shield/log/<date>-<session>.backup.jsonl, a file of its own so the main
+// The log goes to <config>/aegiscontext/log/<date>-<session>.backup.jsonl, a file of its own so the main
 // lock's writes and these never meet. Every line is cleaned with the same redactor (R-17).
 
 import fs from 'node:fs'
@@ -49,7 +49,7 @@ function readFile(p: string): string | undefined {
 async function loadSecrets(o: RunOptions): Promise<{ entries: SecretEntry[]; warning?: string }> {
   if (o.loadSecrets) return o.loadSecrets()
   try {
-    const store = backendFor(thisOS(), { exec: nodeExec, files: readOnlyFiles(path.join(o.configDir, 'secret-shield', 'store')) })
+    const store = backendFor(thisOS(), { exec: nodeExec, files: readOnlyFiles(path.join(o.configDir, 'aegiscontext', 'store')) })
     const loaded = await loadList(store)
     return { entries: loaded.entries, ...(loaded.warning ? { warning: loaded.warning } : {}) }
   } catch {
@@ -62,7 +62,7 @@ function writeLog(configDir: string, session: unknown, entries: LogEntry[], clea
   if (entries.length === 0) return
   const id = typeof session === 'string' && SESSION_ID.test(session) ? session : 'unknown-session'
   try {
-    const dir = path.join(configDir, 'secret-shield', 'log')
+    const dir = path.join(configDir, 'aegiscontext', 'log')
     fs.mkdirSync(dir, { recursive: true })
     const date = new Date(entries[0]?.t ?? Date.now()).toISOString().slice(0, 10)
     let part = 1
@@ -71,13 +71,13 @@ function writeLog(configDir: string, session: unknown, entries: LogEntry[], clea
     const lines = entries.map(e => formatLine(e, clean)).join('\n')
     fs.appendFileSync(file(part), appendLine('', lines).text)
   } catch {
-    process.stderr.write('secret-shield backup lock: could not write its log file\n')
+    process.stderr.write('aegiscontext backup lock: could not write its log file\n')
   }
 }
 
 const merge = (answer: Answer, warnings: string[]): Answer => {
   if (warnings.length === 0) return answer
-  const note = `secret-shield (backup lock): ${warnings.join(' ')}`
+  const note = `aegiscontext (backup lock): ${warnings.join(' ')}`
   const prior = typeof answer?.systemMessage === 'string' ? `${answer.systemMessage} ` : ''
   return { ...(answer ?? {}), systemMessage: `${prior}${note}` }
 }
@@ -113,7 +113,7 @@ export async function runBackup(input: Record<string, unknown>, o: RunOptions): 
   const redactor = new Redactor({ checker, registered: saved.entries, hints: settings.hints === 'on', allow: allow ?? NO_ALLOW })
   const clean = (t: string): string => redactor.redactText(t, { deadline: performance.now() + 500 }).text
 
-  const dataDir = path.join(o.configDir, 'secret-shield')
+  const dataDir = path.join(o.configDir, 'aegiscontext')
   const own = [dataDir]
   const landed = realpath(dataDir)
   if (landed !== undefined && landed !== dataDir) own.push(landed)

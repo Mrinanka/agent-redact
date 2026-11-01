@@ -11,13 +11,13 @@ type Hook = { type: string; command: string; args: string[]; timeout: number; on
 const hooksOf = (s: ReturnType<typeof backupSnippet>, event: string): Hook[] => (s.hooks[event as keyof typeof s.hooks] as { hooks: Hook[] }[]).flatMap(g => g.hooks)
 
 test('three events, each a command hook in exec form with no shell', () => {
-  const s = backupSnippet({ main: '/home/me/.claude/secret-shield/backup/backup/main.js', managed: false })
+  const s = backupSnippet({ main: '/home/me/.claude/aegiscontext/backup/backup/main.js', managed: false })
   assert.deepEqual(Object.keys(s.hooks).sort(), ['PostToolUse', 'PreToolUse', 'UserPromptSubmit'])
   for (const event of Object.keys(s.hooks)) {
     const [h] = hooksOf(s, event)
     assert.equal(h?.type, 'command')
     assert.equal(h?.command, 'node')
-    assert.deepEqual(h?.args, ['/home/me/.claude/secret-shield/backup/backup/main.js'])
+    assert.deepEqual(h?.args, ['/home/me/.claude/aegiscontext/backup/backup/main.js'])
     assert.equal(h?.timeout, 30)
   }
 })
@@ -37,7 +37,7 @@ test('a policy file is passed as --policy, after the program', () => {
 })
 
 test('a Windows path with spaces and an apostrophe survives JSON', () => {
-  const main = "C:\\Users\\O'Neil Jr\\.claude\\secret-shield\\backup\\backup\\main.js"
+  const main = "C:\\Users\\O'Neil Jr\\.claude\\aegiscontext\\backup\\backup\\main.js"
   const text = JSON.stringify(backupSnippet({ main, managed: false }))
   assert.deepEqual(((JSON.parse(text) as ReturnType<typeof backupSnippet>).hooks.PreToolUse as { hooks: Hook[] }[])[0]?.hooks[0]?.args, [main])
 })
@@ -49,4 +49,14 @@ test('the files in docs/snippets are exactly what the builder makes', () => {
     ['managed.json', backupSnippet({ main: SNIPPET_MAIN, managed: true, policyFile: SNIPPET_POLICY })],
   ]
   for (const [name, snippet] of want) assert.equal(fs.readFileSync(path.join(dir, name), 'utf8'), `${JSON.stringify(snippet, null, 2)}\n`, name)
+})
+
+test('the organization install settings: folder marketplace, plugin enabled, and the guard listed after the plugin', async () => {
+  const { orgPluginSnippet, SNIPPET_MARKETPLACE } = await import('../src/core/snippet.ts')
+  const s = orgPluginSnippet(SNIPPET_MARKETPLACE)
+  assert.deepEqual(s.prependPlugins, ['aegiscontext@aegiscontext', 'sec-default@builtin'])
+  assert.equal(s.enabledPlugins['aegiscontext@aegiscontext'], true)
+  assert.deepEqual(s.extraKnownMarketplaces.aegiscontext.source, { source: 'directory', path: SNIPPET_MARKETPLACE })
+  const file = path.join(import.meta.dirname, '..', 'docs', 'snippets', 'managed-plugin.json')
+  assert.equal(fs.readFileSync(file, 'utf8'), `${JSON.stringify(s, null, 2)}\n`, 'docs/snippets/managed-plugin.json')
 })
