@@ -22,7 +22,7 @@ export type Files = {
 export type StoreOS = 'macos' | 'linux' | 'windows'
 export type Tools = { exec: Exec; files: Files; service?: string }
 
-export const SERVICE = 'secret-shield'
+export const SERVICE = 'aegiscontext'
 const TIMEOUT_MS = 20_000
 const INDEX = 'index'
 const FLAG = 'has-list'

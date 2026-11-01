@@ -106,6 +106,11 @@ Tiny clarifications go under **Minor** at the bottom.
 | D-078 | The targets | accepted | 5 | 19 |
 | D-079 | Doctor finds Node by looking in the PATH folders | accepted | 5 | 15 |
 | D-080 | Plan step 5 item 6 is met by a managed-file run in CI, not a Step 0 VM | accepted | 5 | 19 |
+| D-081 | The final name is AegisContext | accepted | 6 | header, 14, 19 |
+| D-082 | Claude Code's built-in guard: warn once, doctor line, measured in CI; only the organization install fixes it | accepted | 6 | 5.3, 19, 22 |
+| D-083 | Step 6 ships `v0.1.0-rc.1`; the install line points at a `release` branch | accepted | 6 | 19 |
+| D-084 | The organization install is a folder marketplace plus `prependPlugins` that also lists `sec-default@builtin` | accepted | 6 | 5.3, 19 |
+| D-085 | `stable` 2.1.309 joins the tested list from one full-kit run on Windows | accepted | 6 | 4, 20 |
 
 ## Entry template (short form, from D-018 on)
 
@@ -781,6 +786,41 @@ Tiny clarifications go under **Minor** at the bottom.
 - Why: The words in the plan point at something that does not exist. The managed file run is what D-020 already chose, and it works on the other two systems, which the maintainer's PC cannot test.
 - Cost: it has not run on this PC, and "starting in observe mode" is not part of that run (it runs in safe mode). Both stay open until the first CI run is read.
 - Evidence: `docs/decision-log.md` D-020; `package.json` scripts; `.github/workflows/ci.yml`.
+
+## D-081: The final name is AegisContext
+- Date / Step: 2026-11-01 / 6        Status: accepted (replaces NoCreds, which the step 6 plan had chosen earlier the same day)
+- Decision: Plugin `aegiscontext`, settings key `aegisContext`, environment prefix `AEGISCONTEXT_`, data folder and password-store service `aegiscontext`, repo `Mrinanka/aegiscontext`, doctor `/aegiscontext:doctor`. `/redact` stays. The old working name `secret-shield` is gone from the product; the history in this log and in progress stays as written. Nothing was published under an earlier name.
+- Why: The owner proposed it ("AegisContext, lets check its eligibility") after reading the NoCreds plan, and chose it when shown the risk.
+- Rejected: NoCreds (kept as the recommendation: no tool of that name found, but narrower than what the tool hides). Pausing the name until v0.1.0 (a later rename would touch the saved-values store name and the settings key again).
+- Evidence: `npm view` for `aegiscontext`, `aegis-context` and `@aegiscontext/core`: 404 (free). GitHub search: no repo named `aegiscontext`; 39 for `aegis-context`, among them Aegis-Context-Broker (middleware for IDEs). Web search: "Aegis" is used for a Claude Code secret-detection MCP server (aegis-sec), an LLM secrets firewall (andreaskasper/aegis on Docker Hub) and a Kubernetes secrets store (shieldworks/aegis), so confusion is a risk; the README says in one line that this is a different project. No trademark register was searched; that is on the release checklist for v0.1.0. The name has no "Claude" or "Anthropic".
+
+## D-082: Claude Code's built-in guard: warn once, doctor line, measured in CI; only the organization install fixes it
+- Date / Step: 2026-11-01 / 6        Status: accepted (approved with the step 6 plan)
+- Decision: On a machine with managed settings, and with a Team or Enterprise login, Claude Code seats `sec-default@builtin` outermost and routes `prompt.context`, `prompt.attachment`, `prompt.compose`, `session.compact` and the `attachment`, `hook-context` and `compaction` rows of `session.append` past user-tier plugins. The plugin cannot close this (`turn.step` pins `messageCount`). It marks `prompt.compose` in `$.state`, and the first main `turn.step` without the mark warns once and sets a flag; `/redact doctor` shows the tier and the guard state (R-05a). The doors are measured in CI by `npm run leak-test:guarded` and listed in `GUARDED_OPEN`; `npm run leak-test:org` proves the organization install leaves none open.
+- Why: Users must never believe they are protected when they are not (R-05). The leak could not be measured on this PC: the guard seats only when a real managed file exists, and the kit does not write the machine's managed file here (D-020). `CLAUDE_CODE_MANAGED_SETTINGS_PATH` did not redirect the policy folder in a scratch run (the debug log still read the Program Files file and said "not seated").
+- Rejected: Staying silent. A hook that rewrites the messages itself (`turn.step` pins them).
+- Evidence: the 2.1.316 binary strings ("seated by managed prependPlugins at position", "not seated: managed prependPlugins does not list it", the `prependPlugins` description); `tests/guard-check.test.ts`; `plugin/hooks/lock.test.ts` (guard tests; 151 pass under `claude plugin test`); `tests/leak-org.test.ts`. **Open until CI has run:** which doors `GUARDED_OPEN` should hold (the list is the plan's expectation, not a measurement) and whether the organization install seats in tier `prepend`.
+
+## D-083: Step 6 ships `v0.1.0-rc.1`; the install line points at a `release` branch
+- Date / Step: 2026-11-01 / 6        Status: accepted (approved with the step 6 plan)
+- Decision: The release candidate first; `v0.1.0` after two weeks of daily use and the hand checks. A new `release` branch is the repo's default, so a plain install gets released code. Step branches still go into `develop`; each release merges `develop` into `release`. The release workflow runs on a `v*` tag, calls CI, runs the README install on three systems and makes a draft release. The maintainer merges and tags; Claude never does.
+- Why: `develop` is the default branch now, so a plain install would give users unreleased code.
+- Rejected: Installing from a tag only (the README line would need a ref syntax that was not verified). Making `develop` stable.
+- Evidence: `tools/release/pack.ts`, `tests/release-pack.test.ts`, `.github/workflows/release.yml`, `tests/docs.test.ts`.
+
+## D-084: The organization install is a folder marketplace plus `prependPlugins` that also lists `sec-default@builtin`
+- Date / Step: 2026-11-01 / 6        Status: accepted
+- Decision: Managed settings carry `extraKnownMarketplaces` (a `directory` source), `enabledPlugins` and `prependPlugins: [aegiscontext@aegiscontext, sec-default@builtin]` (`docs/snippets/managed-plugin.json`). A plugin from GitHub or a git URL counts as a user's, so spec §19's "internal git mirror" no longer reaches `prepend`; it serves the Personal install only. A `directory` marketplace installed in a scratch run with a path holding a space (`tests/install-real.test.ts`); a `file://` git source was refused by `claude plugin marketplace add` and did not resolve from settings either, so the install from git is proven only by the release workflow's README job, from GitHub.
+- Why: The binary's `prependPlugins` text says a list replaces the guard's default seat, so the guard must be listed or it is removed. Evidence of the tier is the debug log (`tier prepend`), which the kit requires.
+- Rejected: Digest-pinned `pluginDigests` (a folder must prove a digest, and a checkout whose line endings changed proves nothing; the kit measures the plain folder first).
+- Evidence: 2.1.316 binary strings; `tools/leak-test/org.ts`; `tests/leak-org.test.ts`. **Open until CI has run:** the managed run has not been seen to seat the plugin in `prepend`.
+
+## D-085: `stable` 2.1.309 joins the tested list from one full-kit run on Windows
+- Date / Step: 2026-11-01 / 6        Status: accepted
+- Decision: `TESTED_VERSIONS` gains 2.1.309. The full kit ran from a scratch install of `@anthropic-ai/claude-code@2.1.309` on Windows with `--claude`: the baseline saw 98 of 98 fakes, the plugin run saw 0 of 105 across 15 doors. Not run in CI, nor on macOS or Linux; `docs/tested-versions.md` says so.
+- Why: `stable` is what many people run; a warning at every session start for them would be noise, and the kit says it holds.
+- Rejected: Adding `stable` to the CI pin (a second 320 MB install per job for one older version).
+- Evidence: the run's output (labels and counts only), this session.
 
 ---
 

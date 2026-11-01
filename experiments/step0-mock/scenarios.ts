@@ -190,6 +190,18 @@ export const SCENARIOS: Scenario[] = [
     }],
   },
   {
+    // Step 6: the docs say a worker that keeps crashing is unloaded; check 0.6 saw three kills survive. Seven here.
+    name: 'budget-repeat-many',
+    checks: ['0.6'],
+    canaries: [],
+    runs: [{
+      prompt: () => 'Run seven commands.',
+      args: ALLOWED,
+      markers: ['on-budget'],
+      script: () => steps([...['one', 'two', 'three', 'four', 'five', 'six', 'seven'].map(n => bash(`echo BUDGET-CPU ${n}`)), bash('echo after')]),
+    }],
+  },
+  {
     name: 'runtime',
     checks: ['0.4', '0.13'],
     canaries: [],

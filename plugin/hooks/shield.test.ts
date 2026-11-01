@@ -21,7 +21,7 @@ function world(on: On, settings: Record<string, unknown> = {}, o: WorldOptions =
   mock.env(on, { CLAUDE_CONFIG_DIR: 'D:\\cfg', ...(o.os ? { OS: o.os } : {}) })
   on('session.id', () => ({ value: o.session?.() ?? SESSION }))
   on('session.cwd', () => ({ value: 'D:\\work' }))
-  on('settings.read', (_$, e) => ({ value: e.source === 'user' ? { secretShield: settings } : {} }))
+  on('settings.read', (_$, e) => ({ value: e.source === 'user' ? { aegisContext: settings } : {} }))
   on('fs.exists', (_$, e) => ({ value: o.exists?.(e.path) ?? false }))
   on('fs.list', () => ({ value: [] }))
   on('fs.write', (_$, e) => {
@@ -78,7 +78,7 @@ test('a fake reaches no file write, state write, store write or screen line', as
     expect(text.includes(FAKE)).toBe(false)
     expect(text.includes(PW)).toBe(false)
   }
-  expect(w.writes.some(x => x.path.includes('secret-shield'))).toBe(true)
+  expect(w.writes.some(x => x.path.includes('aegiscontext'))).toBe(true)
 })
 
 test('a row before session.start still works, and the marker is written at session.start', async ($, on) => {
@@ -97,7 +97,7 @@ test('a hook that fails: allow lets the row through with a warning', async ($, o
     throw new Error('boom')
   })
   await $.session.append(toolResult(`x ${FAKE}`))
-  expect(w.ui.some(l => l.includes('secret-shield'))).toBe(true)
+  expect(w.ui.some(l => l.includes('aegiscontext'))).toBe(true)
   expect(JSON.stringify(w.session.appended()).includes('withheld')).toBe(false)
 })
 

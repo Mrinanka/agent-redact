@@ -1,4 +1,4 @@
-// Settings (spec §14, R-13, R-14, R-15). Pure: the hooks read each source's `secretShield` key and
+// Settings (spec §14, R-13, R-14, R-15). Pure: the hooks read each source's `aegisContext` key and
 // hand the values here.
 //
 // The levels, lowest first:
@@ -22,7 +22,7 @@ export const DEFAULTS = {
     log: { days: 30 },
     locked: [],
 };
-const ENUMS = {
+export const ENUMS = {
     mode: ['enforce', 'observe'],
     personal_data: ['on', 'off'],
     outbound: ['block', 'ask', 'warn', 'off'],
@@ -55,7 +55,7 @@ function parseSource(name, raw) {
         return { patch, errors, notices };
     const bad = (what, wants) => void errors.push(`${name}: ${what} ${wants}`);
     if (!isObject(raw)) {
-        bad('secretShield', 'must be an object');
+        bad('aegisContext', 'must be an object');
         return { patch, errors, notices };
     }
     for (const key of Object.keys(raw))

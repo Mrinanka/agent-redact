@@ -1,0 +1,14 @@
+{
+  "name": "aegiscontext",
+  "owner": { "name": "Mrinanka Dhar" },
+  "metadata": { "description": "AegisContext: no creds reach the model. A Claude Code plugin that hides secrets before the model sees them." },
+  "plugins": [
+    {
+      "name": "aegiscontext",
+      "source": "./plugin",
+      "description": "Hides secrets before the model sees them in Claude Code.",
+      "category": "security",
+      "tags": ["security", "secrets", "redaction", "hooks"]
+    }
+  ]
+}

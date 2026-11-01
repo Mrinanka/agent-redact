@@ -45,7 +45,7 @@ export async function resumeBlock($: EngineInterface): Promise<string | undefine
     const held = rt.settings.on_check_failure === 'hold' && !observe
     warn($, 'failure-resume', `the check of this session's history did not finish. ${held ? 'Your message was not sent.' : 'It may reach the model unchecked.'}`)
     await writeLog($, [{ t: await $.clock.now(), event: 'failure', door: 'resume', where: 'history', action: held ? 'held' : 'allowed', detail: 'timeout' }], t => t)
-    if (held) return 'secret-shield could not finish checking this session\'s history, so your message was not sent. Start a new session, or send /redact allow to continue anyway.'
+    if (held) return 'aegiscontext could not finish checking this session\'s history, so your message was not sent. Start a new session, or send /redact allow to continue anyway.'
     await setResumeState($, { session, found: 0, lifted: false })
     return undefined
   }
@@ -61,7 +61,7 @@ export async function safeResumeBlock($: EngineInterface): Promise<string | unde
     const held = (await failureMode($)) === 'hold'
     warn($, 'failure-resume', `a check failed on this session's history. ${held ? 'Your message was not sent.' : 'It may reach the model unchecked.'}`)
     await writeLog($, [{ t: Date.now(), event: 'failure', door: 'resume', where: 'history', action: held ? 'held' : 'allowed', detail: 'read' }], t => t)
-    return held ? 'secret-shield could not check this session\'s history, so your message was not sent.' : undefined
+    return held ? 'aegiscontext could not check this session\'s history, so your message was not sent.' : undefined
   }
 }
 

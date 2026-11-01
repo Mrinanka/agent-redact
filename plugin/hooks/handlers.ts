@@ -119,7 +119,7 @@ function applyMedia($: EngineInterface, rt: Runtime, message: RowMessage): RowMe
   if (rt.settings.media === 'drop') return dropMedia(message).message
   if (rt.settings.notices === 'on' && !mediaNoticed) {
     mediaNoticed = true
-    warn($, 'media', 'an image or document reached the model. secret-shield cannot read inside them.')
+    warn($, 'media', 'an image or document reached the model. aegiscontext cannot read inside them.')
   }
   return message
 }
@@ -173,11 +173,11 @@ export async function cleanSubmit($: EngineInterface, e: Args<'prompt.submit'>):
   if (capped) capWarning($)
   if (tooLong) tooLongWarning($)
   if (isObserve(rt)) return { text: e.text, ...(e.context ? { context: e.context } : {}) }
-  if (blocked) return { drop: 'secret-shield: your message holds a secret that your settings say to block, so it was not sent.' }
+  if (blocked) return { drop: 'aegiscontext: your message holds a secret that your settings say to block, so it was not sent.' }
   if (!complete) {
     const held = rt.settings.on_check_failure === 'hold'
     await failed($, rt, 'prompt', 'your message', 'timeout', held)
-    if (held) return { drop: 'secret-shield could not finish checking your message, so it was not sent. Try again, or send less at once.' }
+    if (held) return { drop: 'aegiscontext could not finish checking your message, so it was not sent. Try again, or send less at once.' }
   }
   return context ? { text: res.text, context } : { text: res.text }
 }
@@ -186,7 +186,7 @@ export async function failedSubmit($: EngineInterface, kind: string): Promise<Su
   const held = (await failureMode($)) === 'hold'
   warn($, `failure-${kind}`, `a check failed (${kind}) on your message. ${held ? 'It was not sent.' : 'It went through unchecked.'}`)
   await logFailure($, 'prompt', 'prompt', kind, held)
-  return held ? { drop: 'secret-shield could not check your message, so it was not sent.' } : undefined
+  return held ? { drop: 'aegiscontext could not check your message, so it was not sent.' } : undefined
 }
 
 // ---- prompt.context, prompt.attachment --------------------------------------------------
@@ -245,11 +245,11 @@ export async function cleanAttachment($: EngineInterface, e: Args<'prompt.attach
   if (res.tooLong) tooLongWarning($)
   if (isObserve(rt)) return e.text
   let text = res.text
-  if (res.blocked) text = '[secret-shield withheld this content: ' + BLOCKED_REASON + ']'
+  if (res.blocked) text = '[aegiscontext withheld this content: ' + BLOCKED_REASON + ']'
   else if (!res.complete) {
     const held = rt.settings.on_check_failure === 'hold'
     await failed($, rt, 'attachment', e.type, 'timeout', held)
-    if (held) text = '[secret-shield withheld this content: a check could not finish]'
+    if (held) text = '[aegiscontext withheld this content: a check could not finish]'
   } else if (e.text.length <= MAX_REMEMBERED_CHARS) {
     if (attachmentMemory.size >= MAX_REMEMBERED) attachmentMemory.delete(attachmentMemory.keys().next().value as string)
     attachmentMemory.set(e.text, { version: rt.redactor.version, text })
@@ -261,7 +261,7 @@ export async function failedAttachment($: EngineInterface, e: Args<'prompt.attac
   const held = (await failureMode($)) === 'hold'
   warn($, `failure-${kind}`, `a check failed (${kind}) on an attachment. ${held ? 'It was withheld.' : 'It reached the model unchecked.'}`)
   await logFailure($, 'attachment', e.type, kind, held)
-  return held ? '[secret-shield withheld this content: a check failed]' : e.text
+  return held ? '[aegiscontext withheld this content: a check failed]' : e.text
 }
 
 // ---- prompt.compose ---------------------------------------------------------------------
@@ -288,7 +288,7 @@ export async function startUp($: EngineInterface): Promise<void> {
     warn($, 'observe', OBSERVE_BANNER)
     $.ui.status(OBSERVE_BANNER)
   }
-  await writeLog($, [{ t: await $.clock.now(), event: 'start', mode: rt.settings.mode, detail: 'secret-shield started' }], cleaner(rt))
+  await writeLog($, [{ t: await $.clock.now(), event: 'start', mode: rt.settings.mode, detail: 'aegiscontext started' }], cleaner(rt))
 }
 
 /** An existing stable copy of the backup lock is brought up to date; a session never creates one (D-068). */
@@ -311,7 +311,7 @@ export const OBSERVE_BANNER = 'OBSERVE MODE, secrets are NOT being hidden'
 /** A command that can't be registered must never stop a row or a prompt being cleaned. */
 export async function registerCommands($: EngineInterface): Promise<void> {
   try {
-    await $.command.register({ name: COMMAND, description: 'secret-shield: status, add, learn, allow, self-check, doctor', argumentHint: '[add|learn|allow|self-check|doctor]' })
+    await $.command.register({ name: COMMAND, description: 'aegiscontext: status, add, learn, allow, self-check, doctor', argumentHint: '[add|learn|allow|self-check|doctor]' })
   } catch {
     warn($, 'command', 'could not register /redact; hiding carries on')
   }

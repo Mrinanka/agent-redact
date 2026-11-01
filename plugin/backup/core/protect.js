@@ -2,7 +2,7 @@
 // settings that would switch it off. The shell check reads text, so it is best effort: a command that
 // hides what it does gets past it (spec §22).
 /** Top-level settings that can switch the tool off or change what it does. */
-const KILL_SWITCHES = ['disableAllHooks', 'allowManagedHooksOnly', 'hooks', 'enabledPlugins', 'secretShield'];
+const KILL_SWITCHES = ['disableAllHooks', 'allowManagedHooksOnly', 'hooks', 'enabledPlugins', 'aegisContext'];
 const KILL_ENV = 'CLAUDE_CODE_SIMPLE';
 const CHANGES = /(?:^|[\s;&|(])(?:rm|rmdir|mv|cp|del|erase|rd|ren|rename|move|copy|truncate|tee|chmod|chown|ln|touch|Remove-Item|Rename-Item|Move-Item|Copy-Item|Set-Content|Add-Content|Clear-Content|Out-File|New-Item|ri|ni)\b|>|sed\s+(?:-\S*\s+)*-i|perl\s+-\S*i|(?:node|python3?|ruby|perl|deno|bun)\s+-\S*[ec]\b/i;
 export function normalize(path, caseless) {
@@ -60,7 +60,7 @@ const quotedOrBare = (command, caseless) => normalize(command, caseless).replace
 export function shellChangesProtected(command, r) {
     if (/\bclaude\s+plugins?\s+(?:disable|uninstall|remove)\b/i.test(command))
         return 'the plugin';
-    if (/\b(?:delete-generic-password\b.*secret-shield|secret-tool\s+clear\b.*secret-shield)/i.test(command))
+    if (/\b(?:delete-generic-password\b.*aegiscontext|secret-tool\s+clear\b.*aegiscontext)/i.test(command))
         return 'the saved secrets';
     if (!CHANGES.test(command))
         return undefined;

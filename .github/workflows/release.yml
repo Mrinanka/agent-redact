@@ -1,0 +1,74 @@
+name: Release
+
+# A tag `v*` pushed by the maintainer. Nothing is published: the last job makes a DRAFT release with the archives
+# and SHA256SUMS, which the maintainer reviews and publishes by hand (spec section 19).
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The whole of CI, on the tagged commit.
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  # Plan step 6 "Done when": the install line in the README, run as written, from GitHub, on the three systems.
+  readme-install:
+    name: README install (${{ matrix.os }})
+    needs: ci
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install the pinned Claude Code
+        run: npm ci --ignore-scripts --prefix tools/leak-test/claude-pin
+      - name: Put the pinned Claude Code on PATH
+        shell: bash
+        run: node tools/leak-test/claude-path.ts >> "$GITHUB_PATH"
+      - name: Run the README install line
+        run: node tools/release/readme-install.ts
+
+  draft-release:
+    name: Draft release
+    needs: [ci, readme-install]
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Make the archives and checksums
+        env:
+          TAG: ${{ github.ref_name }}
+        run: npm run release:pack -- "$TAG"
+      - name: Make a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          flags="--draft"
+          case "$TAG" in *-rc.*) flags="$flags --prerelease" ;; esac
+          gh release create "$TAG" dist/release/* $flags --title "$TAG" --notes "See CHANGELOG.md. Check the archives against SHA256SUMS before use (docs/release-checklist.md)."

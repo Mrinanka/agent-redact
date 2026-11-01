@@ -7,7 +7,7 @@
             "type": "command",
             "command": "node",
             "args": [
-              "<CONFIG-FOLDER>/secret-shield/backup/backup/main.js",
+              "<CONFIG-FOLDER>/aegiscontext/backup/backup/main.js",
               "--policy",
               "<PATH-TO-MANAGED-SETTINGS-COPY>.json"
             ],
@@ -24,7 +24,7 @@
             "type": "command",
             "command": "node",
             "args": [
-              "<CONFIG-FOLDER>/secret-shield/backup/backup/main.js",
+              "<CONFIG-FOLDER>/aegiscontext/backup/backup/main.js",
               "--policy",
               "<PATH-TO-MANAGED-SETTINGS-COPY>.json"
             ],
@@ -41,7 +41,7 @@
             "type": "command",
             "command": "node",
             "args": [
-              "<CONFIG-FOLDER>/secret-shield/backup/backup/main.js",
+              "<CONFIG-FOLDER>/aegiscontext/backup/backup/main.js",
               "--policy",
               "<PATH-TO-MANAGED-SETTINGS-COPY>.json"
             ],

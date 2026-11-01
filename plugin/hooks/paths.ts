@@ -18,7 +18,7 @@ export async function configDir($: EngineInterface): Promise<string> {
   return joinPath(home, '.claude')
 }
 
-/** <config>/secret-shield: the log, the marker and (on Windows) the encrypted store. */
+/** <config>/aegiscontext: the log, the marker and (on Windows) the encrypted store. */
 export async function dataDir($: EngineInterface): Promise<string> {
-  return joinPath(await configDir($), 'secret-shield')
+  return joinPath(await configDir($), 'aegiscontext')
 }

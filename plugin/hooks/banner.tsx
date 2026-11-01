@@ -7,5 +7,5 @@ import { observing, OBSERVE_BANNER } from './handlers.ts'
 export async function drawBanner($: EngineInterface, e: UiRenderInput, next: (e: UiRenderInput) => unknown) {
   if (!(await observing($))) return next(e)
   const { Text } = $.ui.resolve(e) as never as Record<string, (...a: never[]) => never>
-  return <Text color="warning">secret-shield: {OBSERVE_BANNER}</Text>
+  return <Text color="warning">aegiscontext: {OBSERVE_BANNER}</Text>
 }

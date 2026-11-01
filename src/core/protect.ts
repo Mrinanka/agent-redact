@@ -12,7 +12,7 @@ export type Roots = {
 }
 
 /** Top-level settings that can switch the tool off or change what it does. */
-const KILL_SWITCHES = ['disableAllHooks', 'allowManagedHooksOnly', 'hooks', 'enabledPlugins', 'secretShield'] as const
+const KILL_SWITCHES = ['disableAllHooks', 'allowManagedHooksOnly', 'hooks', 'enabledPlugins', 'aegisContext'] as const
 const KILL_ENV = 'CLAUDE_CODE_SIMPLE'
 const CHANGES = /(?:^|[\s;&|(])(?:rm|rmdir|mv|cp|del|erase|rd|ren|rename|move|copy|truncate|tee|chmod|chown|ln|touch|Remove-Item|Rename-Item|Move-Item|Copy-Item|Set-Content|Add-Content|Clear-Content|Out-File|New-Item|ri|ni)\b|>|sed\s+(?:-\S*\s+)*-i|perl\s+-\S*i|(?:node|python3?|ruby|perl|deno|bun)\s+-\S*[ec]\b/i
 
@@ -69,7 +69,7 @@ const quotedOrBare = (command: string, caseless: boolean): string => normalize(c
 /** What a shell command would change that it must not, in a word, or nothing. */
 export function shellChangesProtected(command: string, r: Roots): string | undefined {
   if (/\bclaude\s+plugins?\s+(?:disable|uninstall|remove)\b/i.test(command)) return 'the plugin'
-  if (/\b(?:delete-generic-password\b.*secret-shield|secret-tool\s+clear\b.*secret-shield)/i.test(command)) return 'the saved secrets'
+  if (/\b(?:delete-generic-password\b.*aegiscontext|secret-tool\s+clear\b.*aegiscontext)/i.test(command)) return 'the saved secrets'
   if (!CHANGES.test(command)) return undefined
   const text = quotedOrBare(command, r.caseless)
   if (r.own.some(root => text.includes(normalize(root, r.caseless)))) return "the tool's own files"

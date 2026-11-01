@@ -1,4 +1,4 @@
-# Plan: building secret-shield (working name)
+# Plan: building AegisContext
 
 How we build the tool described in `spec.md`, and how we prove it works.
 
@@ -205,8 +205,9 @@ Then **Audit 1**.
    - `docs/personal.md`, `docs/managed.md`, `docs/verify.md` (running the leak test kit), `docs/troubleshooting.md`
 4. **Results:** tested-versions list and scores for this release.
 5. **Optional real run.** The same doors against the real API, run by the maintainer before each release. Moved here from step 1: it needs a real key and network, and there is nothing to test until the tool exists. It stays out of the kit, which uses neither (spec 20).
-6. **Release:** tag, archive, SHA-256 checksums, changelog.
-7. **Final name** chosen and checked (spec header).
+6. **Release:** step 6 ships the release candidate `v0.1.0-rc.1` (tag, archive, SHA-256 checksums, changelog); `v0.1.0` follows the two weeks of daily use and the hand checks. The install line points at a `release` branch, set as the repo's default; step branches still go into `develop`, and each release merges `develop` into `release` (D-083).
+7. **Final name** chosen and checked (spec header): AegisContext (D-081).
+8. **Built-in guard and organization install** measured in CI: `npm run leak-test:guarded` and `npm run leak-test:org` (D-082).
 
 Before release, the maintainer uses it for their own daily work for at least two weeks.
 

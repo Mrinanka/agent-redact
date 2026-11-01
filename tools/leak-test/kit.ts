@@ -24,6 +24,7 @@ import { startTrap, type Attempt } from './trap.ts'
 import { ALLOWED_TOOLS, SCENARIOS, type Ctx, type Run, type Scenario } from './scenarios.ts'
 import type { ClaudeCommand } from './claude-bin.ts'
 import { MANAGED_PROOF_NOTICE, mergeHooks, userSettings } from './fixtures/backup-settings.ts'
+import { tierProblem, type TierMode } from './org.ts'
 import type { ManagedFile } from './managed-file.ts'
 import { makeFake, makeWitness, plant, randomSource, type Fake, type FakeKind, type PlantForm } from '../test-sets/fakes.ts'
 
@@ -95,6 +96,10 @@ export type KitOptions = {
   safeMode?: boolean
   /** The machine's managed settings file, written before the run and removed after it. */
   managedFile?: ManagedFile
+  /** What each door is expected to do, when the doors differ (the guarded run). Default: `expect` for all. */
+  expectFor?: (scenario: string, door: string) => 'clean' | 'leaks'
+  /** Ask Claude Code for a debug log of every run and require it to prove the tool's tier (see org.ts). */
+  tierProof?: TierMode
 }
 
 const RUN_TIMEOUT_MS = 180_000
@@ -221,10 +226,11 @@ function collectHits(record: RequestRecord, runIndex: number, doors: DoorState[]
   }
 }
 
-function runArgs(prompt: string, run: Run, sessionId: string, plugin: string | null, mcpConfig: string | undefined, safeMode: boolean): string[] {
+function runArgs(prompt: string, run: Run, sessionId: string, plugin: string | null, mcpConfig: string | undefined, safeMode: boolean, debugFile?: string): string[] {
   return [
     '-p', prompt,
     ...(safeMode ? ['--safe-mode'] : []),
+    ...(debugFile ? ['--debug-file', debugFile] : []),
     ...(plugin && !run.withoutPlugin ? ['--plugin-dir', plugin] : []),
     ...(run.resume ? ['--resume', sessionId] : ['--session-id', sessionId]),
     ...(mcpConfig ? ['--mcp-config', mcpConfig, '--strict-mcp-config'] : []),
@@ -290,8 +296,8 @@ async function runScenario(s: Scenario, opts: KitOptions, trap: { host: string; 
   let leftover = false
   // With the backup lock as the tool, a stopped prompt shows the lock's own reason.
   const heldRe = opts.backup ? s.heldBackup : s.heldMessage
-  let held = heldRe !== undefined && opts.expect === 'clean'
-  const store = s.seedStore === undefined ? undefined : backendFor(thisOS(), { exec: nodeExec, files: nodeFiles(path.join(configDir, 'secret-shield', 'store')) })
+  let held = heldRe !== undefined && opts.expect === 'clean' && !s.doors.some(d => opts.expectFor?.(s.name, d) === 'leaks')
+  const store = s.seedStore === undefined ? undefined : backendFor(thisOS(), { exec: nodeExec, files: nodeFiles(path.join(configDir, 'aegiscontext', 'store')) })
   try {
     for (const [name, content] of Object.entries(s.files?.(ctx) ?? {})) fs.writeFileSync(path.join(work, name), content)
     const mcpConfig = writeExtras(s, ctx, base, configDir)
@@ -300,7 +306,8 @@ async function runScenario(s: Scenario, opts: KitOptions, trap: { host: string; 
       writeSettings(s, run, base, configDir, opts)
       const mock = await startLeakMock({ script: run.script(ctx), needles })
       const env = runEnv(mock, trap, configDir, opts.extraEnv)
-      const args = runArgs(run.prompt(ctx), run, sessionId, opts.plugin, mcpConfig, opts.safeMode === true)
+      const debugFile = opts.tierProof ? path.join(base, `debug-${index}.log`) : undefined
+      const args = runArgs(run.prompt(ctx), run, sessionId, opts.plugin, mcpConfig, opts.safeMode === true, debugFile)
       const outcome = await runClaude(opts.claude, args, work, env, run.stdin?.(ctx), opts.timeoutMs ?? RUN_TIMEOUT_MS)
       await mock.close()
       for (const r of mock.records) {
@@ -308,6 +315,13 @@ async function runScenario(s: Scenario, opts: KitOptions, trap: { host: string; 
         if (r.unreadable) unreadable += 1
       }
       if (index >= (s.countFromRun ?? 0) && (mock.records.length > 0 || !heldRe?.test(outcome.stdout))) held = false
+      if (opts.tierProof && !run.withoutPlugin) {
+        const problem = debugFile === undefined ? 'no debug file was asked for' : debugProblem(debugFile, opts.tierProof)
+        if (problem) {
+          console.error(`${opts.tierProof} run, ${s.name} run ${index}: ${problem}`)
+          failed = true
+        }
+      }
       const bad = outcome.timedOut || outcome.exit !== 0
       if (bad) failed = true
       runs.push({
@@ -323,7 +337,7 @@ async function runScenario(s: Scenario, opts: KitOptions, trap: { host: string; 
     searchDisk(configDir, needles.filter(n => !n.fakeId.startsWith('witness:')), disk)
     pluginFailures(configDir, needles, s.name)
     if (opts.backup?.where === 'managed' && !managedProofSeen(configDir)) {
-      console.error(`managed run, ${s.name}: the backup lock never logged the notice that proves it read the managed settings file's secretShield key`)
+      console.error(`managed run, ${s.name}: the backup lock never logged the notice that proves it read the managed settings file's aegisContext key`)
       failed = true
     }
   } finally {
@@ -334,9 +348,15 @@ async function runScenario(s: Scenario, opts: KitOptions, trap: { host: string; 
   return { doors, runs, unreadable, failed, leftover, held }
 }
 
+/** Reads one run's debug log and says what is wrong with it, if anything. The log is read here and never printed. */
+function debugProblem(file: string, mode: TierMode): string | undefined {
+  if (!fs.existsSync(file)) return 'Claude Code wrote no debug log, so the tier of the tool is not proven'
+  return tierProblem(fs.readFileSync(file, 'utf8'), mode)
+}
+
 /** The managed file carries a setting the tool does not know; reading it is logged as a notice. */
 function managedProofSeen(configDir: string): boolean {
-  const dir = path.join(configDir, 'secret-shield', 'log')
+  const dir = path.join(configDir, 'aegiscontext', 'log')
   if (!fs.existsSync(dir)) return false
   const details = (name: string): unknown[] =>
     fs.readFileSync(path.join(dir, name), 'utf8').split('\n').filter(l => l !== '').map(l => {
@@ -351,7 +371,7 @@ function managedProofSeen(configDir: string): boolean {
 
 /** What the plugin logged as failed, because a `-p` run shows no warning. The log holds no value; it is scrubbed anyway. */
 function pluginFailures(configDir: string, needles: readonly Needle[], scenario: string): void {
-  const dir = path.join(configDir, 'secret-shield', 'log')
+  const dir = path.join(configDir, 'aegiscontext', 'log')
   if (!fs.existsSync(dir)) return
   for (const name of fs.readdirSync(dir)) {
     for (const line of fs.readFileSync(path.join(dir, name), 'utf8').split('\n')) {
@@ -420,7 +440,7 @@ export async function runKit(opts: KitOptions): Promise<Report> {
     opts.managedFile?.install()
     for (const s of opts.scenarios ?? SCENARIOS) {
       const out = await runScenario(s, opts, trap, disk, allNeedles)
-      for (const d of out.doors) doors.push(doorResult(s.name, d, doorVerdict(d, opts.expect, out.failed, out.held)))
+      for (const d of out.doors) doors.push(doorResult(s.name, d, doorVerdict(d, opts.expectFor?.(s.name, d.name) ?? opts.expect, out.failed, out.held)))
       runs.push(...out.runs)
       unreadable += out.unreadable
       if (out.leftover) leftovers += 1

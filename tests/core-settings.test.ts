@@ -167,7 +167,7 @@ test('wrong types and out-of-range values are errors that name the setting but n
   const cases: [unknown, RegExp][] = [
     [{ mode: 'loud' }, /mode/], [{ outbound: 3 }, /outbound/], [{ hints: true }, /hints/], [{ log: { days: 0 } }, /log\.days/],
     [{ log: { days: 'many' } }, /log\.days/], [{ rules: { off: 'x' } }, /rules\.off/], [{ rules: { actions: { 'a-b': 'explode' } } }, /rules\.actions/],
-    [{ allow: [42] }, /allow/], [{ secret_files: 'x' }, /secret_files/], [{ rules: { custom: [{ id: 'x' }] } }, /rules\.custom/], ['text', /secretShield/], [[1, 2], /secretShield/],
+    [{ allow: [42] }, /allow/], [{ secret_files: 'x' }, /secret_files/], [{ rules: { custom: [{ id: 'x' }] } }, /rules\.custom/], ['text', /aegisContext/], [[1, 2], /aegisContext/],
   ]
   for (const [value, pattern] of cases) {
     const r = resolve({ user: value })

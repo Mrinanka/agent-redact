@@ -65,12 +65,12 @@ async function protect($: EngineInterface, rt: Runtime, tool: string, e: Input):
   const path = pathOf(tool, e)
   if (path) {
     const real = await landing($, path)
-    if (isProtected(path, roots) || isProtected(real, roots)) return "that file belongs to secret-shield, and Claude can't change it"
+    if (isProtected(path, roots) || isProtected(real, roots)) return "that file belongs to aegiscontext, and Claude can't change it"
     if (isSettingsFile(path, roots) || isSettingsFile(real, { ...roots, config: await landing($, roots.config) })) {
       const before = await readIfThere($, path)
       const after = tool === 'Write' ? text(e.content) : applyEdit(before, text(e.old_string), text(e.new_string), e.replace_all === true)
       const key = after === undefined ? undefined : blockedSettingsChange(before, after)
-      if (key) return `that change touches ${key}, which could switch secret-shield off. Only you can change it`
+      if (key) return `that change touches ${key}, which could switch aegiscontext off. Only you can change it`
     }
   } else if (tool === 'Bash' || tool === 'PowerShell') {
     const what = shellChangesProtected(text(e.command), roots)
@@ -149,7 +149,7 @@ export async function askReason($: EngineInterface, tool: string, input: unknown
   const hits = found.hits.filter(h => h.action !== 'warn')
   if (hits.length === 0) return undefined
   await logEvent($, rt, 'notice', tool, 'asked the person about a known value', hits[0]?.tag)
-  return `secret-shield: this ${tool} call holds a hidden value (${named(hits)}). Allow it?`
+  return `aegiscontext: this ${tool} call holds a hidden value (${named(hits)}). Allow it?`
 }
 
 /** The notice after a write: a placeholder stays as text, and the person fills in the value (spec §10). */
@@ -166,5 +166,5 @@ export async function afterTool($: EngineInterface, tool: string, e: Input): Pro
   await addPlaced($, found.map(p => ({ file: name, line: p.line, tag: p.tag })))
   if (rt.settings.notices === 'off') return
   const short = name.slice(Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\')) + 1)
-  for (const p of found.slice(0, 5)) $.ui.log(`secret-shield: Claude wrote a placeholder into ${short}, line ${p.line}. Fill in the real value.`)
+  for (const p of found.slice(0, 5)) $.ui.log(`aegiscontext: Claude wrote a placeholder into ${short}, line ${p.line}. Fill in the real value.`)
 }

@@ -75,7 +75,7 @@ test('a fresh running marker: it stands down and does nothing at all', () => {
     assert.equal(r.code, 0)
     assert.equal(r.out, '')
     assert.equal(r.err, '')
-    assert.ok(!fs.existsSync(path.join(s.cfg, 'secret-shield', 'log')), 'no log either')
+    assert.ok(!fs.existsSync(path.join(s.cfg, 'aegiscontext', 'log')), 'no log either')
   } finally {
     s.done()
   }
@@ -105,7 +105,7 @@ test('ended, stale, forged-old and unreadable markers all let the backup act', (
 test('an odd session id never reads a marker outside the folder', () => {
   const s = scratch()
   try {
-    fs.mkdirSync(path.join(s.cfg, 'secret-shield'), { recursive: true })
+    fs.mkdirSync(path.join(s.cfg, 'aegiscontext'), { recursive: true })
     fs.writeFileSync(path.join(s.cfg, 'x.json'), JSON.stringify({ running: true, beat: Date.now(), version: 'x' }))
     for (const id of ['../../x', '..\\..\\x', 'a/b', '']) assert.equal(hook(s.cfg, promptEvent(s.work, `t ${GH}`, id)).json?.decision, 'block', id)
   } finally {
@@ -168,7 +168,7 @@ test('input over the size cap follows on_check_failure: hold blocks, the default
     assert.equal(open.code, 0)
     assert.equal(open.json?.decision, undefined)
     assert.match(String(open.json?.systemMessage), /did not finish|unchecked/i)
-    fs.writeFileSync(path.join(s.cfg, 'settings.json'), JSON.stringify({ secretShield: { on_check_failure: 'hold' } }))
+    fs.writeFileSync(path.join(s.cfg, 'settings.json'), JSON.stringify({ aegisContext: { on_check_failure: 'hold' } }))
     const held = hook(s.cfg, undefined, { raw: huge })
     assert.equal(held.json?.decision, 'block')
   } finally {
@@ -179,7 +179,7 @@ test('input over the size cap follows on_check_failure: hold blocks, the default
 test('settings in the config folder apply: outbound off lets a secret in a command through', () => {
   const s = scratch()
   try {
-    fs.writeFileSync(path.join(s.cfg, 'settings.json'), JSON.stringify({ secretShield: { outbound: 'off' } }))
+    fs.writeFileSync(path.join(s.cfg, 'settings.json'), JSON.stringify({ aegisContext: { outbound: 'off' } }))
     const r = hook(s.cfg, { hook_event_name: 'PreToolUse', session_id: 's-real', cwd: s.work, tool_name: 'Bash', tool_input: { command: `echo ${GH}` } })
     assert.equal(r.out, '')
   } finally {
@@ -191,7 +191,7 @@ test('--policy supplies a managed setting that a process could not read itself',
   const s = scratch()
   try {
     const pol = path.join(s.work, 'policy json.json')
-    fs.writeFileSync(pol, JSON.stringify({ secretShield: { outbound: 'off', locked: ['outbound'] } }))
+    fs.writeFileSync(pol, JSON.stringify({ aegisContext: { outbound: 'off', locked: ['outbound'] } }))
     const r = hook(s.cfg, { hook_event_name: 'PreToolUse', session_id: 's-real', cwd: s.work, tool_name: 'Bash', tool_input: { command: `echo ${GH}` } }, { args: ['--policy', pol] })
     assert.equal(r.out, '')
     const without = hook(s.cfg, { hook_event_name: 'PreToolUse', session_id: 's-real', cwd: s.work, tool_name: 'Bash', tool_input: { command: `echo ${GH}` } })
@@ -216,8 +216,8 @@ test('unicode in the prompt and in the working folder path', () => {
 test('a log that cannot be written does not stop the answer, and says so without content', () => {
   const s = scratch()
   try {
-    fs.mkdirSync(path.join(s.cfg, 'secret-shield'), { recursive: true })
-    fs.writeFileSync(path.join(s.cfg, 'secret-shield', 'log'), 'a file where the log folder should be')
+    fs.mkdirSync(path.join(s.cfg, 'aegiscontext'), { recursive: true })
+    fs.writeFileSync(path.join(s.cfg, 'aegiscontext', 'log'), 'a file where the log folder should be')
     const r = hook(s.cfg, promptEvent(s.work, `token ${GH}`))
     assert.equal(r.json?.decision, 'block')
     assert.match(r.err, /could not write its log/)
@@ -243,7 +243,7 @@ test('a saved list that cannot be read is a warning, not a crash, in-process', a
 test('a throw inside the checks is a failed check that follows on_check_failure', async () => {
   const s = scratch()
   try {
-    fs.writeFileSync(path.join(s.cfg, 'settings.json'), JSON.stringify({ secretShield: { on_check_failure: 'hold' } }))
+    fs.writeFileSync(path.join(s.cfg, 'settings.json'), JSON.stringify({ aegisContext: { on_check_failure: 'hold' } }))
     const out = await runBackup({ hook_event_name: 'UserPromptSubmit', session_id: 's-real', cwd: s.work, get prompt(): string { throw new Error('boom') } }, { configDir: s.cfg, loadSecrets: async () => ({ entries: [] }) })
     assert.equal(out?.decision, 'block')
   } finally {
@@ -255,7 +255,7 @@ test('a setting the tool does not know is logged as a notice naming its source, 
   const s = scratch()
   try {
     const pol = path.join(s.work, 'policy.json')
-    fs.writeFileSync(pol, JSON.stringify({ secretShield: { kitProof: true } }))
+    fs.writeFileSync(pol, JSON.stringify({ aegisContext: { kitProof: true } }))
     hook(s.cfg, promptEvent(s.work, 'plain words'), { args: ['--policy', pol] })
     const lines = walk(s.cfg).filter(f => f.endsWith('.backup.jsonl')).flatMap(f => fs.readFileSync(f, 'utf8').split('\n')).filter(l => l !== '')
     assert.ok(lines.some(l => (JSON.parse(l) as { detail?: string }).detail === 'policy: unknown setting "kitProof" ignored'), lines.join('\n'))

@@ -1,5 +1,5 @@
 // The "I'm running" marker, read by the backup lock (spec §5.2, R-04). The main lock writes
-// <config>/secret-shield/markers/<session id>.json; the backup lock stands down only when it says
+// <config>/aegiscontext/markers/<session id>.json; the backup lock stands down only when it says
 // `running: true` with a fresh `beat`. A crash leaves `running: true` behind, so age is what decides.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -36,7 +36,7 @@ export function parseMarker(text) {
 export function markerPath(configDir, sessionId) {
     if (typeof sessionId !== 'string' || !SESSION_ID.test(sessionId))
         return undefined;
-    return path.join(configDir, 'secret-shield', 'markers', `${sessionId}.json`);
+    return path.join(configDir, 'aegiscontext', 'markers', `${sessionId}.json`);
 }
 /** Any trouble reading it reads as "no marker", which makes the backup lock act. */
 export function readMarker(configDir, sessionId) {

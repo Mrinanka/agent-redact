@@ -25,7 +25,7 @@ export async function checkMention($: EngineInterface, path: string): Promise<Me
   const rt = await ready($)
   const observe = rt.settings.mode === 'observe'
   if (MEDIA.test(path)) {
-    return rt.settings.media === 'drop' && !observe ? { deny: 'secret-shield: the media setting is drop, so this file was not attached.' } : 'as-is'
+    return rt.settings.media === 'drop' && !observe ? { deny: 'aegiscontext: the media setting is drop, so this file was not attached.' } : 'as-is'
   }
   if (!(await $.fs.exists(path))) return 'as-is' // the engine says so itself
   const stat = await $.fs.stat(path)
@@ -40,7 +40,7 @@ export async function checkMention($: EngineInterface, path: string): Promise<Me
     await writeLog($, secrets.slice(0, 50).map((h, i) => ({ t: i, event: 'hide' as const, door: 'mention', where: path, rule: h.ruleId, label: h.label, tag: h.tag, action: observe ? 'would-hide' : h.action, mode: rt.settings.mode, ...(observe ? { detail: 'would have hidden' } : {}) })).map(l => ({ ...l, t: Date.now() })), clean)
   }
   if (observe) return 'as-is'
-  if (res.blocked) return { deny: 'secret-shield: this file holds a secret that your settings say to block, so it was not attached.' }
+  if (res.blocked) return { deny: 'aegiscontext: this file holds a secret that your settings say to block, so it was not attached.' }
   if (!res.complete) throw new Error('check ran out of time')
   if (res.text === text) return 'as-is'
   const name = path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1)
@@ -56,7 +56,7 @@ export async function checkMention($: EngineInterface, path: string): Promise<Me
 export async function failedMention($: EngineInterface, kind: string, hold: boolean): Promise<string | undefined> {
   warn($, `failure-${kind}`, `a check failed (${kind}) on an @ file. ${hold ? 'It was not attached.' : 'It reached the model unchecked.'}`)
   await writeLog($, [{ t: Date.now(), event: 'failure', door: 'mention', where: 'mention', action: hold ? 'held' : 'allowed', detail: kind }], t => t)
-  return hold ? 'secret-shield could not check this file, so it was not attached.' : undefined
+  return hold ? 'aegiscontext could not check this file, so it was not attached.' : undefined
 }
 
 /** Empties this session's copies, and any an earlier session left. */

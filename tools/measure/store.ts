@@ -66,7 +66,7 @@ async function readTimes(b: Backend, size: number): Promise<void> {
 
 /** Whether `security -i` keeps what it was given in a history file. Top-level dot files only. */
 async function historyCheck(): Promise<void> {
-  const marker = `secretshieldmarker${randomUUID().replace(/-/g, '')}`
+  const marker = `aegiscontextmarker${randomUUID().replace(/-/g, '')}`
   const home = os.homedir()
   const started = Date.now() - 2000
   await nodeExec(['security', '-i'], { stdin: `add-generic-password -a measure-history -s ${marker} -U -w "${marker}"\n` })
@@ -87,7 +87,7 @@ async function historyCheck(): Promise<void> {
 async function main(): Promise<void> {
   const name = thisOS()
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'measure-store-'))
-  const b = backendFor(name, { exec: nodeExec, files: nodeFiles(dir), service: `secret-shield-measure-${randomUUID()}` })
+  const b = backendFor(name, { exec: nodeExec, files: nodeFiles(dir), service: `aegiscontext-measure-${randomUUID()}` })
   try {
     const status = await b.status()
     console.log(`store ${b.id} on ${name}: ${status}`)

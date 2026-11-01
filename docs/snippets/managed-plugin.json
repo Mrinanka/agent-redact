@@ -1,0 +1,17 @@
+{
+  "extraKnownMarketplaces": {
+    "aegiscontext": {
+      "source": {
+        "source": "directory",
+        "path": "<MARKETPLACE-FOLDER>"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "aegiscontext@aegiscontext": true
+  },
+  "prependPlugins": [
+    "aegiscontext@aegiscontext",
+    "sec-default@builtin"
+  ]
+}

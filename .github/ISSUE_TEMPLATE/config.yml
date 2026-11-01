@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security problem (private)
+    url: https://github.com/Mrinanka/aegiscontext/security/advisories/new
+    about: A secret that reaches the model, or a leak from the tool itself. Never put a real secret in an issue.

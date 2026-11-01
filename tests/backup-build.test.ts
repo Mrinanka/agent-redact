@@ -82,7 +82,7 @@ test('it never contacts the network, evaluates text or loads native code', () =>
 test('the build runs from a folder with spaces and an apostrophe, started in exec form with no shell', () => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "it's a back up "))
   try {
-    const copy = path.join(base, 'secret shield', 'backup')
+    const copy = path.join(base, 'aegis context', 'backup')
     for (const f of listFiles(dir)) {
       const to = path.join(copy, path.relative(dir, f))
       fs.mkdirSync(path.dirname(to), { recursive: true })

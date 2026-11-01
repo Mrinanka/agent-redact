@@ -3,7 +3,7 @@
 //
 //   user     hooks in <config>/settings.json, with the plugin not loaded (--no-plugin)
 //   managed  hooks in the machine's managed settings file, which still run under --safe-mode (check 0.8),
-//            plus a `secretShield` key. The key carries a setting no version of the tool knows, so the
+//            plus a `aegisContext` key. The key carries a setting no version of the tool knows, so the
 //            backup lock logs a notice for it: that notice in the log proves a real managed file was read.
 
 import { backupSnippet, type Snippet } from '../../../src/core/snippet.ts'
@@ -18,8 +18,8 @@ export function userSettings(main: string, extraHooks: Hooks = {}): { hooks: Hoo
   return { hooks: mergeHooks(backupSnippet({ main, managed: false }).hooks, extraHooks) }
 }
 
-export function managedFileContent(main: string): { hooks: Snippet['hooks']; secretShield: Record<string, unknown> } {
-  return { ...backupSnippet({ main, managed: true }), secretShield: { [MANAGED_PROOF_KEY]: true } }
+export function managedFileContent(main: string): { hooks: Snippet['hooks']; aegisContext: Record<string, unknown> } {
+  return { ...backupSnippet({ main, managed: true }), aegisContext: { [MANAGED_PROOF_KEY]: true } }
 }
 
 /** Event lists are joined, so a scenario's own hook runs beside the backup lock's. */

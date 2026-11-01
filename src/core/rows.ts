@@ -99,7 +99,7 @@ export function redactRow(r: TextRedactor, message: RowMessage, o: RowOptions): 
   return { message: changed ? { ...message, content: blocks } : message, changed, hits, complete, blocked, capped, ...(tooLong ? { tooLong: true as const } : {}) }
 }
 
-const note = (reason: string): string => `[secret-shield withheld this content: ${reason}]`
+const note = (reason: string): string => `[aegiscontext withheld this content: ${reason}]`
 
 /**
  * The row with its cleanable content replaced by a note that holds none of it (spec §12 `hold`,

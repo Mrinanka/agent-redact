@@ -25,7 +25,7 @@ function disk(files: Record<string, string | null>): SettingsIO {
 
 const CFG = path.join(os.tmpdir(), 'cfg')
 const CWD = path.join(os.tmpdir(), 'proj')
-const ss = (o: unknown): string => JSON.stringify({ secretShield: o })
+const ss = (o: unknown): string => JSON.stringify({ aegisContext: o })
 const userFile = path.join(CFG, 'settings.json')
 const projFile = path.join(CWD, '.claude', 'settings.json')
 const localFile = path.join(CWD, '.claude', 'settings.local.json')
@@ -53,7 +53,7 @@ test('a project can make things stricter but not weaker', () => {
   assert.equal(r.settings.mode, 'enforce')
 })
 
-test('a file with other settings and no secretShield key is fine', () => {
+test('a file with other settings and no aegisContext key is fine', () => {
   const r = load({ [userFile]: JSON.stringify({ theme: 'dark', hooks: {} }) })
   assert.deepEqual(r.problems, [])
 })

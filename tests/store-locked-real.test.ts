@@ -30,7 +30,7 @@ after(() => {
 })
 
 test('a saved list in a really locked store warns and loads nothing, and loads again once unlocked', { skip }, async () => {
-  const b = backendFor(thisOS(), { exec: nodeExec, files: nodeFiles(dir), service: `secret-shield-test-${randomUUID()}` })
+  const b = backendFor(thisOS(), { exec: nodeExec, files: nodeFiles(dir), service: `aegiscontext-test-${randomUUID()}` })
   const list = [{ value: randomBytes(18).toString('base64'), label: 'test', added: '2026-11-01' }]
   const pass = randomBytes(9).toString('hex')
   if (process.platform === 'darwin') {

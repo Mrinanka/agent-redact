@@ -1,17 +1,15 @@
-# Spec: secret-shield (working name)
+# Spec: AegisContext
 
 An open-source tool that stops secrets from reaching the model when developers use Claude Code.
 
 - **Status:** draft.
 - **License:** Apache-2.0.
-- **Last updated:** 1 November 2026 (step 4, D-055 to D-060, D-063 to D-065).
+- **Last updated:** 1 November 2026 (step 6: the name, the built-in guard, the organization install, D-081 to D-085).
 - **Maintainer:** (your name)
 
 **How to read this spec.** Requirements a build must meet have an ID (`R-01`) and the word **must**. Tests in `plan.md` point to these IDs. **Should** means strongly recommended but not release-blocking. Facts about Claude Code were checked on a real machine in Step 0; the evidence is in `docs/findings-step0.md`, and a check number (`0.4`) points to its row.
 
-**About the name.** "secret-shield" is a working name. Before the first public release, pick a final name that:
-- does not contain "Claude" or "Anthropic" (trademarks; "for Claude Code" in the description is fine)
-- is free on GitHub and npm and not used by another secrets tool
+**About the name.** AegisContext is the final name (decided in step 6, D-081 in the decision log; it replaces NoCreds, which was the first choice the same day). The plugin is `aegiscontext`, the settings key `aegisContext`, the environment prefix `AEGISCONTEXT_`, the data folder and password-store service `aegiscontext`, and the repo `Mrinanka/aegiscontext`. The name has no "Claude" or "Anthropic" in it (trademarks; "for Claude Code" in the description is fine). When chosen it was free on npm and no GitHub repo was named `aegiscontext`, but "Aegis" is common in security: other tools use it for Claude Code secret detection, an LLM secrets firewall and a Kubernetes secrets store. The README says in one line how this tool differs. No trademark register has been searched; do that before v0.1.0.
 
 ---
 
@@ -54,7 +52,7 @@ When a developer types a message, or Claude reads a file or command output, the 
 | | v1 |
 |---|---|
 | **Surfaces** | The Claude Code terminal, the VS Code extension and the Code tab of the desktop app. Scripted runs (`claude -p`) too. |
-| **Not covered** | claude.ai chat. Claude Code on the web and Agent SDK hosts, unless listed in the tested-versions list. |
+| **Not covered** | claude.ai chat. Claude Code on the web and Agent SDK hosts, unless listed in the tested-versions list. Plugins are not available in the desktop app's WSL sessions (checked in the app, step 6). |
 | **Systems** | macOS, Windows and Linux, all first-class. That includes WSL and devcontainers. CI runs on all three. |
 | **Claude Code versions** | A **tested versions** list is published with each release (section 20). v1 supports the Claude Code version pinned for testing (and newer, with the R-01 warning). Hunting for the lowest working version is parked (section 23, D-019). Earlier figures (2.1.287 for mods, 2.1.295 for "block if this check fails") were never checked, and won't be in v1 (section 23). Step 0 was checked against 2.1.316. The VS Code extension runs its own copy of Claude Code, which can be a different version from the CLI (2.1.314 when the CLI was 2.1.316); the tested-versions list names both. |
 
@@ -82,7 +80,7 @@ A Claude Code plugin with a hooks module, written in TypeScript. It uses these h
 
 ### 5.2 Backup lock (settings hooks)
 
-Settings-file hooks (`UserPromptSubmit`, `PreToolUse`, `PostToolUse`) that run the same checker with Node. They only act when the main lock isn't alive, for example after a crash, or when an admin policy blocks plugin hooks. Node is required (D-069). The build is `plugin/backup/`, compiled from `src/backup`, `src/core` and `src/checker` by `npm run plugin:build`; `/redact backup` copies it to `<config>/secret-shield/backup/` and prints the settings to paste (D-068, section 15).
+Settings-file hooks (`UserPromptSubmit`, `PreToolUse`, `PostToolUse`) that run the same checker with Node. They only act when the main lock isn't alive, for example after a crash, or when an admin policy blocks plugin hooks. Node is required (D-069). The build is `plugin/backup/`, compiled from `src/backup`, `src/core` and `src/checker` by `npm run plugin:build`; `/redact backup` copies it to `<config>/aegiscontext/backup/` and prints the settings to paste (D-068, section 15).
 
 **Strict (D-070).** When it acts, the backup lock is strict:
 - **Before a tool runs,** every check applies to the call: saved values, shapes and labels (not only saved values, as the main lock's outbound check does), then self-protection and the overwrite guard (sections 10, 11, 17). A call that holds a secret is denied with a reason that names a kind and a tag, never a value.
@@ -109,11 +107,12 @@ Settings-file hooks (`UserPromptSubmit`, `PreToolUse`, `PostToolUse`) that run t
 
 | | Personal mode | Managed mode |
 |---|---|---|
-| Who installs | The developer, from the plugin marketplace | An admin, through managed settings |
-| Plugin tier | `user`: other plugins installed in higher tiers run first and could skip it | `prepend`: runs first, and no user plugin can skip it |
+| Who installs | The developer, from the plugin marketplace | An admin: a folder on each machine that holds the marketplace, plus managed settings (`docs/snippets/managed-plugin.json`) |
+| Plugin tier | `user`: other plugins installed in higher tiers run first and could skip it | `prepend`: the plugin is enabled by managed `enabledPlugins` and named in managed `prependPlugins`, so it runs first and no user plugin can skip it. A plugin fetched from GitHub or a git URL counts as a user's, so it cannot be seated there. |
+| Claude Code's built-in guard (`sec-default@builtin`) | **Passes some events past a user-tier plugin** on a machine with managed settings and with a Team or Enterprise login: `prompt.context` (project instruction files), `prompt.attachment`, `prompt.compose`, `session.compact`, and the `attachment`, `hook-context` and `compaction` rows of `session.append`. The plugin cannot close this; it says so once per session and in `/redact doctor` (section 22). | Works: listed in `prependPlugins` after the plugin, it sits where the plugin expects |
 | Messages, files read, command output | Hidden | Hidden |
 | `@` files | Hidden through `prompt.mention` (check 0.2) | Hidden |
-| Compaction summaries | Hidden through `session.append` (check 0.1) | Hidden |
+| Compaction summaries | Hidden through `session.append` (check 0.1), except where the built-in guard passes the `compaction` row over (see above) | Hidden |
 | Can the user switch it off? | Yes | No. Settings can be locked |
 | If the organization sets `allowManagedHooksOnly` | **Does nothing.** User-tier plugins load no hooks and user settings hooks don't run (check 0.7). A plain command (no hooks) still loads and says so. | Works |
 | If a project's `.claude/settings.json` (or `settings.local.json`) sets `disableAllHooks` | **Does nothing**, silently. Both locks are off (check 0.14). | Works: a project can't turn off managed hooks |
@@ -121,7 +120,8 @@ Settings-file hooks (`UserPromptSubmit`, `PreToolUse`, `PostToolUse`) that run t
 
 The backup lock is installed in Personal mode by `/redact backup` and the Personal snippet (`docs/snippets/personal.json`), which leaves `onFailure` out; in Managed mode an administrator uses the Managed snippet (`docs/snippets/managed.json`), which sets `onFailure: "block"` on all three hooks and carries a `--policy` placeholder (D-069, D-076). `/redact doctor` warns when the hooks lack `onFailure: "block"`.
 
-- **R-05** When the tool can't run its hooks (for example under `allowManagedHooksOnly`, `disableAllHooks` or `--safe-mode` in Personal mode), it **must** say so plainly where possible. Users must never believe they are protected when they aren't. When hooks are blocked, none of the tool's code runs (checks 0.7, 0.14), so a plain command with no hooks, `/secret-shield:doctor`, **must** say the hooks are not running. A plugin's plain command always carries the plugin's name; `/redact` only exists while the hooks run (D-059).
+- **R-05** When the tool can't run its hooks (for example under `allowManagedHooksOnly`, `disableAllHooks` or `--safe-mode` in Personal mode), it **must** say so plainly where possible. Users must never believe they are protected when they aren't. When hooks are blocked, none of the tool's code runs (checks 0.7, 0.14), so a plain command with no hooks, `/aegiscontext:doctor`, **must** say the hooks are not running. A plugin's plain command always carries the plugin's name; `/redact` only exists while the hooks run (D-059).
+- **R-05a** When Claude Code's built-in guard routes events past the plugin, the tool **must** say so once per session where it can (a main `turn.step` that arrives with no `prompt.compose` seen), name what is not being checked and the fix, and show the same in `/redact doctor` with the plugin's tier. It never claims to be protecting what it cannot see (D-082).
 
 ## 6. What gets checked
 
@@ -293,7 +293,7 @@ Claude Code gives each hook **10 seconds of its own time**: time spent waiting o
 | `mode` | What happens |
 |---|---|
 | `enforce` (default) | Everything in this spec |
-| `observe` | Nothing is hidden or blocked. Every detection is logged as "would have hidden". A permanent banner says `secret-shield: OBSERVE MODE, secrets are NOT being hidden`. Self-protection (section 17) stays on: it is no detection, and a trial must not be able to switch the tool off (D-058). |
+| `observe` | Nothing is hidden or blocked. Every detection is logged as "would have hidden". A permanent banner says `aegiscontext: OBSERVE MODE, secrets are NOT being hidden`. Self-protection (section 17) stays on: it is no detection, and a trial must not be able to switch the tool off (D-058). |
 
 Observe mode is for organizations measuring false alarms before rollout.
 
@@ -301,7 +301,7 @@ Observe mode is for organizations measuring false alarms before rollout.
 
 ## 14. Settings
 
-The tool works with no settings at all. Settings live under a `secretShield` key in Claude Code's own settings files, read through `$.settings.read` (D-041). Three levels apply:
+The tool works with no settings at all. Settings live under a `aegisContext` key in Claude Code's own settings files, read through `$.settings.read` (D-041). Three levels apply:
 
 | Level | Where | Who | Rule |
 |---|---|---|---|
@@ -345,9 +345,9 @@ A project **can** add custom rules and `secret_files` patterns, and choose stric
 | `/redact add [--label name]` | Register a secret, pasted into a box. Never on the command line, and not in `claude -p` (D-057) |
 | `/redact learn` | Pick secrets from `.env*` files |
 | `/redact allow <tag>` | Mark a hidden value as harmless (`--always` to remember, in the OS password store). With no tag: lift a resume block, or let the last guarded change through once (D-060) |
-| `/redact backup [managed]` | Copies the backup lock to `<config>/secret-shield/backup/` and prints the settings to add (Personal, or `managed` for the Managed snippet), and whether Node was found. A later session refreshes an existing copy when it is out of date and never makes one unasked (D-068). |
+| `/redact backup [managed]` | Copies the backup lock to `<config>/aegiscontext/backup/` and prints the settings to add (Personal, or `managed` for the Managed snippet), and whether Node was found. A later session refreshes an existing copy when it is out of date and never makes one unasked (D-068). |
 | `/redact self-check` | Runs built-in test cases and shows pass or fail. `--report` writes a shareable report file (no secrets) for a security team or a bug report. |
-| `/redact doctor` (also `/secret-shield:doctor`) | Checks the environment: Claude Code version (tested or not), Personal or Managed mode, plugin tier, whether hooks are allowed to run, password store available, backup lock installed (hooks found in user or managed settings, copy current or old, `onFailure`), Node found, marker present and when it last beat, settings valid. Says what to fix. |
+| `/redact doctor` (also `/aegiscontext:doctor`) | Checks the environment: Claude Code version (tested or not), Personal or Managed mode, plugin tier, whether hooks are allowed to run, password store available, backup lock installed (hooks found in user or managed settings, copy current or old, `onFailure`), Node found, marker present and when it last beat, settings valid. Says what to fix. |
 
 - **R-16** Claude **must not** be able to run these commands. Only the user can.
 
@@ -362,7 +362,7 @@ A project **can** add custom rules and `secret_files` patterns, and choose stric
 
 - **No network.** It never contacts the internet. No telemetry.
 - **No runtime libraries.** All code that runs is in the repo and reviewable. Build-time dev dependencies are pinned with a lockfile.
-- **Protects its own files.** Claude's tool calls are denied if they try to change the tool's settings, registered secrets, log or plugin folder, or to change `disableAllHooks`, `allowManagedHooksOnly`, `hooks`, `enabledPlugins`, `secretShield` or `env.CLAUDE_CODE_SIMPLE` in a Claude Code settings file. Other settings edits pass. This stops a malicious web page or file from tricking Claude into turning it off (D-055).
+- **Protects its own files.** Claude's tool calls are denied if they try to change the tool's settings, registered secrets, log or plugin folder, or to change `disableAllHooks`, `allowManagedHooksOnly`, `hooks`, `enabledPlugins`, `aegisContext` or `env.CLAUDE_CODE_SIMPLE` in a Claude Code settings file. Other settings edits pass. This stops a malicious web page or file from tricking Claude into turning it off (D-055).
 - **Patterns can't get stuck.** Every pattern is checked when the tool is built, and patterns only run on small pieces of text (section 18). A stuck check that runs out its 10-second budget lets content through by default (section 12).
 - **Tier note:** in Personal mode, a plugin installed in a higher tier could skip this tool's hooks. Managed mode installs it in the `prepend` tier, where no user plugin can skip it.
 
@@ -388,13 +388,12 @@ Each piece of text is checked once, when it first arrives, and saved already cle
 - Optional backup lock: `/redact backup` copies it and prints the snippet for `~/.claude/settings.json` (`docs/snippets/personal.json`). It needs Node.
 
 **Managed mode**
-- A `docs/managed.md` guide with ready-to-use managed-settings examples for macOS, Windows and Linux: the plugin in the `prepend` tier, the backup lock hooks (`docs/snippets/managed.json`, with `onFailure: "block"` and `--policy` when settings arrive by MDM or from the server), locked settings, and recommended values (`on_check_failure: hold`).
-- Notes for MDM tools (Jamf, Intune) and for offline or mirrored installs (an internal git mirror of the repo).
+- A `docs/managed.md` guide with ready-to-use managed-settings examples for macOS, Windows and Linux: the plugin in the `prepend` tier (a folder marketplace on each machine, the plugin in managed `enabledPlugins`, and `prependPlugins` that lists the plugin and then `sec-default@builtin`; `docs/snippets/managed-plugin.json`), the backup lock hooks (`docs/snippets/managed.json`, with `onFailure: "block"` and `--policy` when settings arrive by MDM or from the server), locked settings, and recommended values (`on_check_failure: hold`).
+- Notes for MDM tools (Jamf, Intune) and for offline or mirrored installs: copy a release archive to a folder on each machine. An internal git mirror does not reach the `prepend` tier (a plugin from git counts as a user's); it serves the Personal install only.
 
 **Releases**
-- Semantic versioning.
-- Signed git tags.
-- Release archives with SHA-256 checksums.
+- Semantic versioning. Releases go out as a pre-release (`v0.1.0-rc.1`) first; `release` is the branch the install line points at, and each release merges `develop` into it.
+- Release archives (`.tar.gz` and `.zip`, made by `git archive`) with SHA-256 checksums. Signed git tags are parked (section 23, D-019).
 - A changelog that calls out any change to defaults.
 
 **Uninstall** is documented, including how to delete the saved secrets from the OS password store.
@@ -436,6 +435,7 @@ The maintainers can't test inside every organization. So everything needed to te
 - **Already sent.** Content sent before the tool was installed, or before a secret was registered, can't be taken back (sections 6.1, 6.2).
 - **Claude Code's own disk records.** Claude Code keeps backup copies of edited files in `~/.claude/file-history/`. It saves a large command output as a raw `.txt` file beside the session transcript, and the model is pointed at that file; a Read of it is hidden like any other, but the copy on disk stays raw. It also stores a tool's structured result (what the screen shows) unchanged next to the redacted text. Its auto-memory can save text from a prompt into project memory files. A prompt blocked by a hook is still written to the session transcript. The tool can't change these. We'll report them to Anthropic.
 - **Images and documents** are passed or dropped, never read, in v1.
+- **Claude Code's built-in guard.** On a machine with managed settings, and with a Team or Enterprise login, Claude Code seats a guard outermost and routes some events past a user-tier plugin: project instruction files (`prompt.context`), attachments, the instructions note (`prompt.compose`), compaction (`session.compact`) and the `attachment`, `hook-context` and `compaction` rows of `session.append`. No user-tier code can close this: `turn.step` pins the messages. The tool warns once per session and in `/redact doctor`. Only the organization install (section 19) fixes it. The doors this opens are measured in CI by `npm run leak-test:guarded` and listed in `tools/leak-test/org.ts` (`GUARDED_OPEN`); `npm run leak-test:org` proves the organization install leaves none open (D-082).
 - **Personal mode:**
   - plugins in a higher tier can skip this tool
   - `allowManagedHooksOnly` turns it off

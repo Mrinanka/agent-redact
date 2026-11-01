@@ -4,7 +4,7 @@
 // answers them with `$`, and tests and `tools/measure/store.ts` answer them with Node.
 //
 // An error message from a program is never kept: it could echo what it was given.
-export const SERVICE = 'secret-shield';
+export const SERVICE = 'aegiscontext';
 const TIMEOUT_MS = 20_000;
 const INDEX = 'index';
 const FLAG = 'has-list';

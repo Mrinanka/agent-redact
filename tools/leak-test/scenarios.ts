@@ -50,7 +50,7 @@ export type Scenario = {
 }
 
 /** What `claude -p` prints when the backup lock stops a prompt. */
-const BACKUP_BLOCKED = /secret-shield \(backup lock\): your message holds a secret/
+const BACKUP_BLOCKED = /aegiscontext \(backup lock\): your message holds a secret/
 
 export const MCP_TOOL = 'mcp__leak__get_note'
 

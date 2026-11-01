@@ -1,4 +1,4 @@
-// secret-shield's hooks (spec §5.1): every row, prompt and context block is cleaned before it is stored
+// aegiscontext's hooks (spec §5.1): every row, prompt and context block is cleaned before it is stored
 // or sent. Each hook has a `.catch`, so a failure follows `on_check_failure` instead of the engine's
 // default of letting the content through (R-03, spec §12).
 //
@@ -15,6 +15,7 @@ import { resumeBlock, safeResumeBlock } from './resume.ts'
 import { afterTool, askReason, beforeTool } from './tools.ts'
 import { drawBanner } from './banner.tsx'
 import { drawAdd, drawLearn } from './panes.tsx'
+import { checkGuard, markComposeSeen, noteOrigin } from './guard.ts'
 
 export const register: Register = on => {
   // All hiding: every row the conversation keeps passes through here before it is stored.
@@ -59,6 +60,7 @@ export const register: Register = on => {
 
   // The note is fixed text, added last, so it is the same for the whole thread and the prompt cache holds.
   on('prompt.compose', async ($, e, next) => {
+    await markComposeSeen($)
     const out = await next(e)
     return { sections: [...out.sections, { id: NOTE_ID, text: PLACEHOLDER_NOTE, scope: 'session' as const }] }
   }).catch(async ($, e, next) => {
@@ -74,11 +76,12 @@ export const register: Register = on => {
     if (next.called) return next(e)
     const held = (await failureMode($)) === 'hold'
     await failedGate($, 'compact', 'compaction', next.error.kind, held)
-    return held ? { skip: 'secret-shield could not check this session, so it was not compacted.' } : next(e)
+    return held ? { skip: 'aegiscontext could not check this session, so it was not compacted.' } : next(e)
   })
 
   // The backstop for a turn with no prompt: the request is held and never sent.
   on('turn.step', async function* ($, e, next) {
+    await checkGuard($, e.agentId)
     const reason = await resumeBlock($)
     if (!reason) return yield* next(e)
     return { turnId: e.turnId, index: e.index, answer: reason, toolUses: [], stopReason: 'end_turn', usage: null }
@@ -88,14 +91,14 @@ export const register: Register = on => {
     const held = (await failureMode($)) === 'hold'
     await failedGate($, 'turn', 'a request to the model', next.error.kind, held)
     if (!held) return yield* next(e)
-    return { turnId: e.turnId, index: e.index, answer: 'secret-shield could not check this session, so the request was not sent.', toolUses: [], stopReason: 'end_turn', usage: null }
+    return { turnId: e.turnId, index: e.index, answer: 'aegiscontext could not check this session, so the request was not sent.', toolUses: [], stopReason: 'end_turn', usage: null }
   })
 
   on('tool.call', async ($, e, next) => {
     const input = e as unknown as Record<string, unknown>
     if (isOwnCommandCall(String(e.tool), input)) return { deny: 'Only the user can run this command.' }
     const deny = await beforeTool($, String(e.tool), input)
-    if (deny) return { deny: `secret-shield: ${deny}` }
+    if (deny) return { deny: `aegiscontext: ${deny}` }
     const ran = await next(e)
     if (ran.deny === undefined && ran.isError !== true) await afterTool($, String(e.tool), input).catch(() => undefined)
     return ran
@@ -103,7 +106,7 @@ export const register: Register = on => {
     if (next.called) return next(e)
     const held = (await failureMode($)) === 'hold'
     await failedGate($, 'tool', 'a tool call', next.error.kind, held)
-    return held ? { deny: 'secret-shield could not check this call, so it was stopped.' } : next(e)
+    return held ? { deny: 'aegiscontext could not check this call, so it was stopped.' } : next(e)
   })
 
   on('tool.check', async ($, e, next) => {
@@ -113,7 +116,7 @@ export const register: Register = on => {
     if (next.called) return next(e)
     const held = (await failureMode($)) === 'hold'
     await failedGate($, 'tool-check', 'a tool call', next.error.kind, held)
-    return held ? { decision: 'deny' as const, reason: 'secret-shield could not check this call.' } : next(e)
+    return held ? { decision: 'deny' as const, reason: 'aegiscontext could not check this call.' } : next(e)
   })
 
   on('prompt.mention', async ($, e, next) => {
@@ -129,6 +132,12 @@ export const register: Register = on => {
     return deny ? { deny } : next(e)
   })
 
+  // Our own `$.command.list()` call passes here with the tier this plugin sits in, which doctor reports.
+  on('command.list', async (_$, e, next) => {
+    noteOrigin(next.origin)
+    return next(e)
+  })
+
   on('command.run', { command: 'redact' }, async ($, e) => {
     if (!isPerson(e.origin?.kind)) return { text: 'Only you can run /redact.' }
     return { text: await redactCommand($, e.args) }
@@ -137,8 +146,8 @@ export const register: Register = on => {
   // The plain command answers when the hooks are off; while they run, this answers it instead (R-05).
   on('command.run', { command: DOCTOR }, async $ => ({ text: await doctor($) }))
 
-  on('ui.render', { component: 'Pane', requestId: 'secret-shield-add' }, ($, e) => drawAdd($, e))
-  on('ui.render', { component: 'Pane', requestId: 'secret-shield-learn' }, ($, e) => drawLearn($, e))
+  on('ui.render', { component: 'Pane', requestId: 'aegiscontext-add' }, ($, e) => drawAdd($, e))
+  on('ui.render', { component: 'Pane', requestId: 'aegiscontext-learn' }, ($, e) => drawLearn($, e))
   on('ui.render', { component: 'AbovePrompt' }, ($, e, next) => drawBanner($, e, next))
 
   on('session.start', async ($, e, next) => {

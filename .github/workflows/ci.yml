@@ -2,7 +2,10 @@ name: CI
 
 on:
   push:
+    branches: ['**']
   pull_request:
+  # The release workflow runs the whole of CI on a tag before it makes a draft release.
+  workflow_call:
 
 permissions:
   contents: read
@@ -84,10 +87,17 @@ jobs:
       # Windows runners are administrators; macOS and Linux write through sudo -n (no password).
       - name: Leak test, backup lock as managed hooks in safe mode
         run: npm run leak-test:managed -- --require-pinned
+      # Step 6: the organization install (a folder marketplace, the plugin in prependPlugins) must hide every door, and the
+      # debug log must show the plugin in tier prepend. Then the same machine with the plugin as a user plugin: the
+      # built-in guard passes some doors over, and those must leak (spec §22), so the limit is measured, not claimed.
+      - name: Leak test, organization install
+        run: npm run leak-test:org -- --require-pinned
+      - name: Leak test, user plugin under the built-in guard
+        run: npm run leak-test:guarded -- --require-pinned
       # The plugin reads the policy source from a real managed file, and doctor calls the install Managed.
       - name: Doctor and policy, real managed file
         env:
-          SECRET_SHIELD_MANAGED_REAL: '1'
+          AEGISCONTEXT_MANAGED_REAL: '1'
         run: node --test tests/doctor-managed-real.test.ts
       # D-036: what one store item holds and how long reading many takes. Sizes and times only.
       - name: Password store limits
@@ -103,8 +113,13 @@ jobs:
           node experiments/step0-mock/run.ts store
           dbus-run-session -- sh -c 'printf ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null; node experiments/step0-mock/run.ts store'
           dbus-run-session -- sh -c 'printf ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null; npm run measure:store; node --test tests/store-real.test.ts'
+          dbus-run-session -- sh -c 'printf ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null; node --test tests/uninstall-real.test.ts'
           dbus-run-session -- sh -c 'printf ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null; STORE_LOCK_TEST=1 node --test tests/store-locked-real.test.ts'
           dbus-run-session -- sh -c 'printf ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null; npm run leak-test -- --require-pinned --allow-real-store'
+      # Spec §19: the documented uninstall command really removes saved values (Linux runs it above, in a keyring).
+      - name: Uninstall removes the saved values
+        if: runner.os != 'Linux'
+        run: node --test tests/uninstall-real.test.ts
       # A really locked store (Known issues): a list must warn, never read as "no list".
       - name: macOS locked Keychain
         if: runner.os == 'macOS'
@@ -118,3 +133,38 @@ jobs:
             ip link set lo up &&
             node -e "require(\"node:net\").connect(443, \"1.1.1.1\").on(\"connect\", () => process.exit(1)).on(\"error\", () => process.exit(0))" &&
             exec sudo -u "$RUN_AS" env "PATH=$PATH" "HOME=$HOME" npm run leak-test:baseline -- --require-pinned'
+
+  # The backup lock runs under whatever `node` is on the person's PATH, and doctor's floor is Node 20 (a guess until
+  # this ran). The kit itself needs Node 24, so it is started by its absolute path while an older Node leads the PATH.
+  backup-node:
+    name: backup lock on Node ${{ matrix.node }} (${{ matrix.os }})
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: ['20', '22']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Install the pinned Claude Code
+        run: npm ci --ignore-scripts --prefix tools/leak-test/claude-pin
+      - name: Remember the Node that runs the kit
+        shell: bash
+        run: echo "KIT_NODE=$(node -p process.execPath)" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Show which Node the hooks will find
+        shell: bash
+        run: node --version
+      - name: Leak test, backup lock under this Node
+        shell: bash
+        run: '"$KIT_NODE" tools/leak-test/run.ts --no-plugin --backup user --require-pinned'

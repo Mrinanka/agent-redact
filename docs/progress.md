@@ -2,7 +2,7 @@
 
 Spec: `docs/spec.md`. Plan: `docs/plan.md`. Parked work: spec §23.
 
-**Current focus:** Step 6, Release + Audit 2 (branch `step-6` from `develop`, after step 5 is merged). Run `/security-review` and `/code-review high` before `/ship`. The hand checks still open are in Known issues (VS Code, desktop app, `outbound: ask`, interactive display).
+**Current focus:** Step 6, Release + Audit 2 (branch `step-6` from `develop`). Built and tested on this PC: the rename (AegisContext, D-081), the kit modes `--org` and `--guarded`, guard detection and doctor lines, the marketplace, repo files, docs, release tooling, 2.1.309 and the worker-crash re-check. **Not done:** the CI run of the managed-file modes (nothing was pushed: the commit and push were refused in the session), Audit 2 (`/security-review`, `/code-review high`), `/verify`, `/ship`. The hand checks still open are in Known issues.
 
 ## Steps
 
@@ -49,9 +49,9 @@ Bugs, unfinished bits and open questions. Features we chose not to build go in s
 - `exportCatches` skips the catch cap for tagged values the catch list refused: in a scratch run 240,160 characters went to `$.state`, 96,064 of them real catches. Those values never reach the matcher. D-053 caps the export at 4,000,000 characters of JSON, because the host refuses a `$.state` write over 4,194,304. A tagged value past that cap gets a new tag after a restart, which is cosmetic and is the second exception in spec §9 (D-065). The `tags` map itself has no cap, so it still grows for the worker's life.
 - Windows reads about 0.5 s per item, so a session with a list spends about 1 s at start, for the index and the list.
 - Audit 1 ran before the last fixes. `/security-review` and `/code-review high` covered the step's code, then the too-long warning, the `constructor` fix and D-053 went in, and neither audit was run again on those. They were tested instead: 8 reverts on a scratch copy, each caught by the new tests.
-- `claude plugin validate` passes, but warns that `plugin/README.md` has no marketplace install line. That comes with the marketplace in step 6.
+- Closed in step 6: `plugin/README.md` now has the marketplace install line, and `claude plugin validate . --strict` and `./plugin --strict` pass. The one warning left is a missing icon, which only matters for a directory submission.
 
-- Step 5 (backup lock) leftovers: spike S6 (does Claude Code show a settings hook's `systemMessage` or stderr?) was run under `claude -p`, where neither shows, and by hand in the interactive terminal, where a blocked prompt does show ("UserPromptSubmit operation blocked by hook: secret-shield (backup lock) ..."). VS Code and the desktop app were not checked. Node 20 as the lowest Node is a guess: the build was only run on Node 24.
+- Step 5 (backup lock) leftovers: spike S6 (does Claude Code show a settings hook's `systemMessage` or stderr?) was run under `claude -p`, where neither shows, and by hand in the interactive terminal, where a blocked prompt does show ("UserPromptSubmit operation blocked by hook: secret-shield (backup lock) ..."). VS Code and the desktop app were not checked. Node 20 as the lowest Node is a guess: step 6 added a CI job (`backup-node`) that runs the backup lock under Node 20 and 22 on Linux and Windows; read its first result before trusting the floor (Node 20 is also past its end of life).
 - `clearLines()` on the checker does nothing since the repeated-line memory was removed (D-074). It stays because many tests and `tools/measure/run.ts` call it; removing it is a cleanup for later. The test titles that named the memory were reworded (titles only).
 - The backup lock on Windows with saved secrets starts PowerShell for each hook that acts (about 1 s each, about 2 s per tool call while the main lock is down). A cache would put a hash or a key on disk (R-09). Reported in spec §22, not fixed.
 - A value marked harmless for one session only (`/redact allow <tag>`) is not visible to the backup lock; it may refuse what the main lock allowed (spec §22).
@@ -66,11 +66,15 @@ Bugs, unfinished bits and open questions. Features we chose not to build go in s
 - After a mistaken `/redact add <value>`, a scratch run with masking showed the value gone from the next request but still in the transcript file; the real plugin's run found it in no file. The difference wasn't traced, so the message still says to rotate.
 - The `@` copy's path holds `secret-shield`, so the model can tell it is a copy. Its Read of the real file is hidden, so nothing leaks.
 - A failed store read can take 20 s, and the retry runs inside a hook, so that row waits.
-- Doctor can't see the plugin's tier, and "Managed" is read from the managed settings holding our `secretShield` or `enabledPlugins` key. `tests/doctor-managed-real.test.ts` checks that against a real managed file in CI.
+- Step 6: doctor now reports the plugin's tier by watching its own `$.command.list()` call pass a `command.list` hook (`next.origin.tier`); in `claude plugin test` it prints a tier or "not visible", and a real value was not seen in a real session yet. "Managed" is still read from the managed settings holding our `aegisContext` or `enabledPlugins` key; `tests/doctor-managed-real.test.ts` checks that against a real managed file in CI.
 - `--always` on a value whose store save fails stays harmless for the session only, and says so.
 
 - With a failed store read, rows go through with only the shape checks until a retry works, under the default `allow`: a saved secret with no shape is sent, with a warning. Seen on CI when PowerShell took over 20 s in a cut-down environment; a normal environment read in about 0.2 s (D-045).
 - The `@` context fallback (engine attaches nothing for the copy) only has a hook test: the short-path case it was written for turned out to need the long path instead.
+
+- Step 6, open until CI has run: (1) `GUARDED_OPEN` in `tools/leak-test/org.ts` is the plan's expectation, not a measurement; the first `leak-test:guarded` run decides it, and spec §22 must then name the measured doors. (2) `leak-test:org` has not yet shown the plugin loading in tier `prepend`; if the folder-marketplace settings in `docs/snippets/managed-plugin.json` are wrong, the run is invalid, not clean. (3) The README install job (`.github/workflows/release.yml`) needs the `release` branch to exist and be the default; until then it fails on a tag. (4) `docs/tested-versions.md` lists the org and guarded runs for 2.1.316 as run in CI; correct it if either does not pass.
+- Step 6, not part of this step: the owner's hand checks (VS Code, desktop app and its version, `outbound: ask`, `/redact` after `/clear`), the two weeks of daily use, the real-API run, reports to Anthropic, a trademark register search for AegisContext, the doubled `$.ui.log` prefix and the other cosmetic items, Anthropic's directory submission, a `/redact` command to remove one saved value. After the merge: `gh repo rename aegiscontext` and update `origin`, turn on private vulnerability reporting (now `enabled:false`), create `release` from `develop` and set it as the default branch, then tag `v0.1.0-rc.1`. The owner's own install has saved values and backup hooks under the old name `secret-shield`; they need re-adding.
+- Step 6: seven worker kills in one session did not unload the plugin (findings, `budget-repeat-many`); the docs' claim of unloading was not reproduced.
 
 ## Gotchas
 
