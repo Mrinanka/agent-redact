@@ -36,7 +36,9 @@ export type StoreLoad = { entries: SecretEntry[]; failed: boolean }
 /** `failed` means a list exists that could not be read, so the caller tries again later. */
 export async function loadRegisteredSecrets($: EngineInterface): Promise<StoreLoad> {
   try {
-    const loaded = await loadList(await backend($))
+    const store = await backend($)
+    const loaded = await loadList(store)
+    await writeLog($, [{ t: await $.clock.now(), event: 'notice', door: 'store', detail: `store ${store.id}: ${loaded.entries.length} saved values` }], t => t)
     if (loaded.warning) {
       warn($, 'store', loaded.warning)
       await writeLog($, [{ t: await $.clock.now(), event: 'failure', door: 'store', detail: loaded.warning }], t => t)

@@ -46,7 +46,9 @@ export async function checkMention($: EngineInterface, path: string): Promise<Me
   const copy = joinPath(await dataDir($), 'm', randomName(), name)
   await $.fs.write(copy, res.text)
   copies.push(copy)
-  return { path: copy, text: `Contents of ${name}:\n${res.text}` }
+  // The engine refuses a Windows short name such as RUNNER~1, so it gets the long path.
+  const real = (await $.fs.stat(copy, { resolve: true }).catch(() => undefined))?.realPath ?? copy
+  return { path: real, text: `Contents of ${name}:\n${res.text}` }
 }
 
 /** A failed check follows on_check_failure (R-03, R-12). */

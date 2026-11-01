@@ -2,11 +2,22 @@
 // here. Fakes are built from pieces.
 
 import type { On, SessionAppendInput } from 'claude-code'
-import { expect, mock, test } from 'claude-code/testing'
+import { expect, mock, test as kitTest } from 'claude-code/testing'
 
 const FAKE = ['ghp', 'Qw3rTy7UiOp9AsDf1GhJk5LzXc8VbNm2ZxCv'].join('_')
 
 type Options = { settings?: Record<string, unknown>; files?: Record<string, string>; messages?: unknown[]; policy?: Record<string, unknown>; check?: boolean; submit?: boolean; mention?: string[]; compact?: boolean; env?: boolean; mentionNothing?: boolean }
+/** The engine wants absolute paths, so a test's folders follow the system it runs on. */
+let posix = false
+const work = (name = ''): string => (posix ? `/work/${name}` : `D:\\work\\${name}`)
+const cfg = (...parts: string[]): string => (posix ? ['/cfg', ...parts].join('/') : ['D:\\cfg', ...parts].join('\\'))
+const test = (name: string, body: Parameters<typeof kitTest>[1]): void => {
+  kitTest(name, async ($, on) => {
+    posix = !/^file:\/\/\/[A-Za-z]:/.test(import.meta.url)
+    await (body as (a: typeof $, b: typeof on) => Promise<void>)($, on)
+  })
+}
+
 const SECRET = ['acme', 'internal', 'Zq93Kd77'].join('-')
 
 type World = { states: unknown[]; stdin: string[]; closed: string[]; clock: { now: number }; storeDown: { on: boolean }; writes: { path: string; text: string }[]; ui: string[]; ran: string[]; files: Record<string, string>; session: ReturnType<typeof mock.session> }
@@ -15,12 +26,8 @@ function world(on: On, o: Options = {}): World {
   const writes: World['writes'] = []
   const ui: string[] = []
   const ran: string[] = []
-  // The engine makes a Windows path relative on other systems, so a test names files from the drive on.
-  const norm = (p: string): string => {
-    const n = p.replace(/\\/g, '/').replace(/^d:/, 'D:')
-    return n.slice(Math.max(n.indexOf('D:/'), 0))
-  }
-  const files: Record<string, string> = Object.fromEntries(Object.entries(o.files ?? {}).map(([k, v]) => [norm(k), v]))
+  const norm = (p: string): string => p
+  const files: Record<string, string> = { ...(o.files ?? {}) }
   const session = mock.session(on)
   if (o.check) on('tool.check', () => ({ decision: 'allow' }))
   if (o.submit) on('prompt.submit', (_$, e) => ({ text: e.text }))
@@ -49,9 +56,9 @@ function world(on: On, o: Options = {}): World {
     closed.push(e.id)
     return { value: undefined }
   })
-  mock.env(on, { CLAUDE_CONFIG_DIR: 'D:\\cfg', OS: 'Windows_NT' })
+  mock.env(on, { CLAUDE_CONFIG_DIR: cfg(), OS: 'Windows_NT' })
   on('session.id', () => ({ value: 'sess-0002' }))
-  on('session.cwd', () => ({ value: 'D:\\work' }))
+  on('session.cwd', () => ({ value: work().slice(0, -1) }))
   on('session.surfaces', () => ({ value: ['terminal'] }))
   on('session.version', () => ({ value: { version: '2.1.316', base: '2.1.316', builtAt: 'x' } }))
   on('session.messages', () => ({ value: o.messages ?? [] }))
@@ -160,7 +167,7 @@ test('an unknown tag is refused in plain words', async ($, on) => {
 // ---- overwrite guard (§10, R-11) ------------------------------------------------------------
 
 test('R-11: a Write that replaces a real secret with its placeholder is blocked, once allowed it passes once', async ($, on) => {
-  const file = 'D:\\work\\c.env'
+  const file = work('c.env')
   const w = world(on, { files: { [file]: `token=${FAKE}\n` } })
   await $.session.append(row(`token=${FAKE}`))
   const seen = (/\[REDACTED:[^\]]+\]/.exec(stored(w)) as RegExpExecArray)[0]
@@ -179,7 +186,7 @@ test('a placeholder written into a new file gives a notice with its line, and /r
   const w = world(on)
   await $.session.append(row(`token ${FAKE}`))
   const seen = (/\[REDACTED:[^\]]+\]/.exec(stored(w)) as RegExpExecArray)[0]
-  await $.tool.call(write('D:\\work\\config.yaml', `a: 1\nb: ${seen}\n`))
+  await $.tool.call(write(work('config.yaml'), `a: 1\nb: ${seen}\n`))
   expect(w.ui.some(l => l.includes('config.yaml') && l.includes('line 2'))).toBe(true)
   expect(await redact($, '')).toContain('config.yaml')
 })
@@ -188,14 +195,14 @@ test('a placeholder written into a new file gives a notice with its line, and /r
 
 test("Claude can't write to the tool's data folder or plugin folder", async ($, on) => {
   const w = world(on)
-  for (const path of ['D:\\cfg\\secret-shield\\log\\a.jsonl', 'd:/CFG/x/../secret-shield/store/index.dpapi']) {
+  for (const path of [cfg('secret-shield', 'log', 'a.jsonl'), cfg('x', '..', 'secret-shield', 'store', 'index.dpapi')]) {
     expect(typeof (await $.tool.call(write(path, 'x'))).deny).toBe('string')
   }
   expect(w.ran).toEqual([])
 })
 
 test('a settings change that would switch the tool off is refused; another settings change passes', async ($, on) => {
-  const file = 'D:\\work\\.claude\\settings.local.json'
+  const file = work(".claude/settings.local.json".replace('/', posix ? '/' : '\\'))
   const w = world(on, { files: { [file]: '{}' } })
   expect(typeof (await $.tool.call(write(file, '{"disableAllHooks":true}'))).deny).toBe('string')
   await $.tool.call(write(file, '{"permissions":{"allow":[]}}'))
@@ -204,7 +211,7 @@ test('a settings change that would switch the tool off is refused; another setti
 
 test('a shell command that changes a protected file is refused', async ($, on) => {
   const w = world(on)
-  expect(typeof (await $.tool.call(bash('rm -rf D:/cfg/secret-shield'))).deny).toBe('string')
+  expect(typeof (await $.tool.call(bash(`rm -rf ${cfg('secret-shield').replace(/\\/g, '/')}`))).deny).toBe('string')
   expect(w.ran).toEqual([])
 })
 
@@ -223,7 +230,7 @@ test('observe: nothing is hidden or blocked, each detection is logged as would h
 
 test('observe: self-protection stays on (D-058)', async ($, on) => {
   const w = world(on, { settings: { mode: 'observe' } })
-  expect(typeof (await $.tool.call(write('D:\\cfg\\secret-shield\\store\\index.dpapi', 'x'))).deny).toBe('string')
+  expect(typeof (await $.tool.call(write(cfg('secret-shield', 'store', 'index.dpapi'), 'x'))).deny).toBe('string')
   expect(w.ran).toEqual([])
 })
 
@@ -257,7 +264,7 @@ test('R-06: /compact is skipped while the block stands', async ($, on) => {
 test('R-16: /redact run by anything but the person is refused', async ($, on) => {
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   world(on)
-  await $.session.start({ cwd: 'D:\\work', surface: 'terminal', isInteractive: true })
+  await $.session.start({ cwd: work(), surface: 'terminal', isInteractive: true })
   const out = await $.command.run({ command: 'redact', args: 'allow' })
   expect(out.text ?? '').toContain('Only you')
 })
@@ -299,7 +306,7 @@ test('media drop removes an image from a row and leaves a note; pass keeps it', 
 // ---- @ files (§5.3) -----------------------------------------------------------------------------
 
 test('an @ file with a secret is read from a copy with the same name and no secret', async ($, on) => {
-  const file = 'D:\\work\\notes.txt'
+  const file = work('notes.txt')
   const seen: string[] = []
   const w = world(on, { files: { [file]: `key ${FAKE}\n` }, mention: seen })
   await $.prompt.mention({ mention: 'notes.txt', path: file })
@@ -311,7 +318,7 @@ test('an @ file with a secret is read from a copy with the same name and no secr
 })
 
 test('if the engine will not attach the copy, the redacted text goes as context, never the file', async ($, on) => {
-  const file = 'D:\\work\\notes.txt'
+  const file = work('notes.txt')
   world(on, { files: { [file]: `key ${FAKE}\n` }, mentionNothing: true })
   const out = await $.prompt.mention({ mention: 'notes.txt', path: file })
   const text = JSON.stringify(out)
@@ -320,7 +327,7 @@ test('if the engine will not attach the copy, the redacted text goes as context,
 })
 
 test('an @ file with nothing to hide is read as it is', async ($, on) => {
-  const file = 'D:\\work\\plain.txt'
+  const file = work('plain.txt')
   const seen: string[] = []
   world(on, { files: { [file]: 'hello\n' }, mention: seen })
   await $.prompt.mention({ mention: 'plain.txt', path: file })
@@ -329,7 +336,7 @@ test('an @ file with nothing to hide is read as it is', async ($, on) => {
 
 test('media drop refuses an @ image', async ($, on) => {
   world(on, { settings: { media: 'drop' } })
-  const out = await $.prompt.mention({ mention: 'a.png', path: 'D:\\work\\a.png' })
+  const out = await $.prompt.mention({ mention: 'a.png', path: work('a.png') })
   expect(typeof out.deny).toBe('string')
 })
 
@@ -386,8 +393,7 @@ async function sha256(text: string): Promise<string> {
 test('a failed load warns, is tried again later, and then hides the value', async ($, on) => {
   const list = encode(JSON.stringify([{ value: SECRET, label: 'mine', added: '2026-11-01' }]))
   const index = encode(JSON.stringify({ v: 1, generation: 1, pieces: 1, checksum: await sha256(list), count: 1 }))
-  const dir = 'D:\\cfg/secret-shield/store'.replace('D:\\cfg/', 'D:\\cfg\\').replace('/store', '\\store')
-  const w = world(on, { files: { [`${dir}\\index.dpapi`]: index, [`${dir}\\list-1-0.dpapi`]: list } })
+  const w = world(on, { files: { [cfg('secret-shield', 'store', 'index.dpapi')]: index, [cfg('secret-shield', 'store', 'list-1-0.dpapi')]: list } })
   w.storeDown.on = true
   await $.session.append(row('nothing here'))
   expect(w.ui.some(l => l.includes('saved secrets'))).toBe(true)
@@ -401,7 +407,7 @@ test('a failed load warns, is tried again later, and then hides the value', asyn
 })
 
 test('/redact learn lists names, never values, and saves what is ticked', async ($, on) => {
-  const file = 'D:\\work\\.env'
+  const file = work('.env')
   const w = world(on, { files: { [file]: `GITHUB_TOKEN=${FAKE}\nPORT=8080\n` }, env: true })
   const said = await redact($, 'learn')
   expect(said).toContain('Found 2')

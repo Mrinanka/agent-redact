@@ -296,12 +296,24 @@ async function runScenario(s: Scenario, opts: KitOptions, trap: { host: string; 
       })
     }
     searchDisk(configDir, needles.filter(n => !n.fakeId.startsWith('witness:')), disk)
+    pluginFailures(configDir, needles, s.name)
   } finally {
     if (store) await saveList(store, []).catch(() => undefined)
     // In finally: the folder holds this run's fakes, so it goes even if a step throws.
     if (!opts.keep) leftover = !removeFolder(base)
   }
   return { doors, runs, unreadable, failed, leftover, held }
+}
+
+/** What the plugin logged as failed, because a `-p` run shows no warning. The log holds no value; it is scrubbed anyway. */
+function pluginFailures(configDir: string, needles: readonly Needle[], scenario: string): void {
+  const dir = path.join(configDir, 'secret-shield', 'log')
+  if (!fs.existsSync(dir)) return
+  for (const name of fs.readdirSync(dir)) {
+    for (const line of fs.readFileSync(path.join(dir, name), 'utf8').split('\n')) {
+      if (line.includes('"event":"failure"')) console.error(`plugin failure in ${scenario}: ${scrub(line, needles).slice(0, 300)}`)
+    }
+  }
 }
 
 export function doorVerdict(d: Pick<DoorState, 'fakes' | 'witnessSeen'>, expect: KitOptions['expect'], failed: boolean, held = false): Verdict {
