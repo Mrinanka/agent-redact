@@ -50,21 +50,24 @@ function usage(message: string): never {
 
 /** The organization install: a folder marketplace on the machine, then the managed file that names it. Both go when the run ends. */
 function orgInstall(): ManagedFile {
-  // The folder is named now (the settings need its path) and made at install, so nothing is left if the run never starts.
-  const parent = path.join(os.tmpdir(), `org market-${process.pid}-${Date.now()}`)
-  const dir = path.join(parent, 'marketplace')
-  const file = managedFile(orgManagedContent(dir))
+  // The folder is made at install with a random name (a predictable one in a shared temp folder could be planted
+  // by another user), and the managed file that names it is written only after it holds the plugin.
+  let parent: string | undefined
+  let file: ManagedFile | undefined
   return {
-    path: file.path,
+    path: managedFile({}).path,
     install() {
+      parent = fs.mkdtempSync(path.join(os.tmpdir(), 'org market-'))
+      const dir = path.join(parent, 'marketplace')
       buildMarketplaceFolder(dir, REPO)
+      file = managedFile(orgManagedContent(dir))
       file.install()
     },
     remove() {
       try {
-        file.remove()
+        file?.remove()
       } finally {
-        fs.rmSync(parent, { recursive: true, force: true })
+        if (parent) fs.rmSync(parent, { recursive: true, force: true })
       }
     },
   }
