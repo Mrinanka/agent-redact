@@ -43,8 +43,8 @@ test('a saved list in a really locked store warns and loads nothing, and loads a
   }
   await saveList(b, list)
   assert.deepEqual((await loadList(b)).entries, list)
-  const lock = process.platform === 'darwin' ? run('security', 'lock-keychain', keychain) : run('secret-tool', 'lock', '--collections')
-  console.log(`lock exit ${lock.status}`)
+  const lock = process.platform === 'darwin' ? run('security', 'lock-keychain', keychain) : run('gdbus', 'call', '--session', '--dest', 'org.freedesktop.secrets', '--object-path', '/org/freedesktop/secrets', '--method', 'org.freedesktop.Secret.Service.Lock', "['/org/freedesktop/secrets/aliases/default']")
+  console.log(`lock exit ${lock.status} ${(lock.stderr ?? '').slice(0, 160)}`)
   assert.equal(lock.status, 0)
   const locked = await loadList(b)
   console.log(`locked read: entries ${locked.entries.length}, unavailable ${locked.unavailable ?? '-'}, warned ${locked.warning !== undefined}`)

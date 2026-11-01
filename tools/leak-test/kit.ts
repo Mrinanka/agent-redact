@@ -311,7 +311,7 @@ function pluginFailures(configDir: string, needles: readonly Needle[], scenario:
   if (!fs.existsSync(dir)) return
   for (const name of fs.readdirSync(dir)) {
     for (const line of fs.readFileSync(path.join(dir, name), 'utf8').split('\n')) {
-      if (line.includes('"event":"failure"')) console.error(`plugin failure in ${scenario}: ${scrub(line, needles).slice(0, 300)}`)
+      if (line.includes('"event":"failure"') || line.includes('"door":"store"')) console.error(`plugin failure in ${scenario}: ${scrub(line, needles).slice(0, 300)}`)
     }
   }
 }
