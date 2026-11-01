@@ -61,16 +61,16 @@ The Claude folder is `~/.claude`, or the folder `CLAUDE_CONFIG_DIR` names. Aegis
 2. If you installed the backup lock, remove its three hooks (`UserPromptSubmit`, `PreToolUse`, `PostToolUse`) from `~/.claude/settings.json`, and any `aegisContext` key.
 3. Delete the saved secrets. Removing the plugin leaves them in your password store on purpose; they are yours. The store holds items with the service name `aegiscontext`: one item named `index` and one per piece named `list-<generation>-<n>`.
 
-   **macOS** (Keychain):
+   **macOS** (Keychain). This removes the saved items, then the AegisContext folder inside your Claude folder (a small marker file stays there after the items go, and the plugin cannot delete a file):
 
    ```
-   while security delete-generic-password -s aegiscontext >/dev/null 2>&1; do :; done
+   while security delete-generic-password -s aegiscontext >/dev/null 2>&1; do :; done; rm -rf "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/aegiscontext"
    ```
 
-   **Linux** (Secret Service; needs `secret-tool` from libsecret-tools):
+   **Linux** (Secret Service; needs `secret-tool` from libsecret-tools). The same two steps:
 
    ```
-   secret-tool clear service aegiscontext
+   secret-tool clear service aegiscontext; rm -rf "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/aegiscontext"
    ```
 
    **Windows** (the values are DPAPI-encrypted files; remove the folder, using your Claude folder if you moved it):
@@ -79,5 +79,4 @@ The Claude folder is `~/.claude`, or the folder `CLAUDE_CONFIG_DIR` names. Aegis
    Remove-Item -Recurse -Force "$env:USERPROFILE\.claude\aegiscontext"
    ```
 
-   This also removes the log, the backup lock copy and the reports. CI runs these commands against the real stores.
-4. On macOS and Linux, delete `<Claude folder>/aegiscontext/` if you want the log and the copy gone too.
+   All three also remove the log, the backup lock copy and the reports. CI runs these commands against the real stores.

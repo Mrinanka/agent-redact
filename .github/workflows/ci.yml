@@ -93,7 +93,12 @@ jobs:
       - name: Leak test, organization install
         run: npm run leak-test:org -- --require-pinned
       - name: Leak test, user plugin under the built-in guard
-        run: npm run leak-test:guarded -- --require-pinned
+        run: npm run leak-test:guarded -- --require-pinned --report guarded-report.json
+      - name: Show the guarded runs (counts and labels only)
+        if: always()
+        shell: bash
+        run: |
+          test -f guarded-report.json && node -e "const r=JSON.parse(require('fs').readFileSync('guarded-report.json','utf8'));for(const x of r.runs)console.log(x.scenario,'run',x.run,'exit',x.exit,'timedOut',x.timedOut,'requests',x.requests,'seconds',x.seconds,JSON.stringify(x.stderr??[]))" || true
       # The plugin reads the policy source from a real managed file, and doctor calls the install Managed.
       - name: Doctor and policy, real managed file
         env:

@@ -89,7 +89,7 @@ test('the uninstall commands in docs/personal.md are the ones the code builds', 
 })
 
 test('the docs never write a whole key, and name the data folder and service the code uses', () => {
-  assert.equal(uninstallText().linux, 'secret-tool clear service aegiscontext')
+  assert.ok(uninstallText().linux.startsWith('secret-tool clear service aegiscontext;'))
   for (const f of DOC_FILES) assert.ok(!/ghp_[A-Za-z0-9]{30,}|AKIA[0-9A-Z]{16}|sk_live_[A-Za-z0-9]{10,}/.test(read(...f.split('/'))), `${f} holds a whole key`)
 })
 
