@@ -23,7 +23,7 @@ import type { SecretEntry } from './store.ts'
 export type Allow = { values: ReadonlySet<string>; patterns: readonly RegExp[] }
 export const NO_ALLOW: Allow = { values: new Set(), patterns: [] }
 
-export type Hit = { ruleId: string; label: string; tag: string; action: Action; kind: string }
+export type Hit = { ruleId: string; label: string; tag: string; action: Action; kind: string; hint?: string }
 
 export type Redacted = {
   text: string
@@ -119,8 +119,10 @@ export class Redactor {
   private readonly maxCatches: number
   private readonly maxCatchChars: number
   private readonly random: (bytes: number) => Uint8Array
-  private readonly registered: Secret[]
-  private readonly registeredMatcher: SecretMatcher | null
+  private registered: Secret[]
+  private registeredMatcher: SecretMatcher | null
+  /** Values marked harmless by the person (spec §11). Held in memory only. */
+  private readonly harmless = new Set<string>()
   private readonly tags = new Map<string, string>()
   private readonly usedTags = new Set<string>()
   private readonly catches = new Map<string, Secret>()
@@ -141,8 +143,9 @@ export class Redactor {
     this.maxCatches = o.maxCatches ?? 5000
     this.maxCatchChars = o.maxCatchChars ?? 100_000
     this.random = o.random ?? (n => crypto.getRandomValues(new Uint8Array(n)))
+    for (const e of o.registered) if (e.harmless === true) this.harmless.add(e.value)
     this.registered = o.registered
-      .filter(e => e.value.length > 0)
+      .filter(e => e.value.length > 0 && e.harmless !== true)
       .map(e => ({ value: e.value, label: cleanLabel(e.label), ruleId: 'registered', showHint: true, kind: 'registered' as const, action: 'hide' as const }))
     this.registeredMatcher = buildMatcher(this.registered)
   }
@@ -169,6 +172,7 @@ export class Redactor {
   }
 
   private isAllowed(value: string): boolean {
+    if (this.harmless.has(value)) return true
     if (this.allow.values.has(value)) return true
     if (this.allow.patterns.length === 0 || value.length > MAX_VALUE_FOR_PATTERNS) return false
     return this.allow.patterns.some(p => p.test(value))
@@ -201,6 +205,38 @@ export class Redactor {
     this.catchChars += value.length
     this.catchesDirty = true
     this.changes++
+  }
+
+  /** The value behind a tag, for the person's own commands and the guard. Never logged or shown. */
+  valueOfTag(tag: string): string | undefined {
+    for (const [value, t] of this.tags) if (t === tag) return value
+    return undefined
+  }
+
+  /** Marks a tagged value harmless for this session (`/redact allow`). False for a tag this session never made. */
+  allowTag(tag: string): boolean {
+    const value = this.valueOfTag(tag)
+    if (value === undefined) return false
+    this.harmless.add(value)
+    const caught = this.catches.get(value)
+    if (caught) {
+      this.catches.delete(value)
+      this.catchList = this.catchList.filter(c => c !== caught)
+      this.catchChars -= value.length
+      this.catchesDirty = true
+    }
+    if (this.registered.some(r => r.value === value)) {
+      this.registered = this.registered.filter(r => r.value !== value)
+      this.registeredMatcher = buildMatcher(this.registered)
+    }
+    this.changes++
+    return true
+  }
+
+  /** Registered and caught values already in the text, in any written form. Catches nothing new (spec §11). */
+  findKnown(text: string, deadline: number): { hits: Hit[]; complete: boolean } {
+    const res = this.redactText(text, { deadline, recheck: true })
+    return { hits: res.hits, complete: res.complete }
   }
 
   private currentCatchMatcher(): SecretMatcher | null {
@@ -406,7 +442,7 @@ export class Redactor {
       out += text.slice(cursor, start) + placeholderText(primary.label, hint, tag)
       cursor = end
       if (action === 'block') blocked = true
-      hits.push({ ruleId: primary.ruleId, label: primary.label, tag, action, kind: primary.kind })
+      hits.push({ ruleId: primary.ruleId, label: primary.label, tag, action, kind: primary.kind, ...(hint === undefined ? {} : { hint }) })
       i = j
     }
     out += text.slice(cursor)

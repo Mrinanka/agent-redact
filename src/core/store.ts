@@ -15,6 +15,8 @@ export type SecretEntry = {
   label: string
   /** The date it was added (YYYY-MM-DD). */
   added: string
+  /** Marked harmless for good (`/redact allow --always`): never hidden, and kept here because a settings file is plain text (R-09). */
+  harmless?: true
 }
 
 export type StoreStatus = 'ok' | 'missing' | 'locked'
@@ -27,6 +29,8 @@ export type Backend = {
   status(): Promise<StoreStatus>
   /** Whether a list has been saved. May be answered with no process, so a session with no list starts none. */
   hasList(): Promise<boolean>
+  /** Leaves or clears a non-secret sign that a list exists, where `get` can't tell "no item" from "locked". */
+  markList?(exists: boolean): Promise<void>
   put(name: string, text: string): Promise<void>
   get(name: string): Promise<string | undefined>
   del(name: string): Promise<void>
@@ -88,6 +92,7 @@ function parseEntries(text: string): SecretEntry[] | undefined {
   }
 }
 
+const UNREADABLE = 'the saved secrets could not be read from the password store, which may be locked. They are not being hidden until it can be read.'
 const DAMAGED = 'the saved secrets are damaged, so none were loaded. Add them again.'
 
 export async function loadList(b: Backend): Promise<Loaded> {
@@ -104,7 +109,9 @@ export async function loadList(b: Backend): Promise<Loaded> {
   if (status !== 'ok') return { ...emptyList(status), warning: `the saved secrets could not be read: the password store is ${status}.` }
   try {
     const stored = await b.get(INDEX)
-    const index = stored === undefined ? undefined : parseIndex(stored)
+    // A list exists, so an index that reads as absent means the store didn't answer (a locked keyring can look like this).
+    if (stored === undefined) return { ...emptyList('locked'), warning: UNREADABLE }
+    const index = parseIndex(stored)
     if (!index) return { entries: [], warning: DAMAGED }
     let text = ''
     for (let i = 0; i < index.pieces; i++) {
@@ -117,7 +124,7 @@ export async function loadList(b: Backend): Promise<Loaded> {
     if (!entries || entries.length !== index.count) return { entries: [], warning: DAMAGED }
     return { entries }
   } catch {
-    return { entries: [], warning: 'the saved secrets could not be read from the password store.' }
+    return { ...emptyList('locked'), warning: UNREADABLE }
   }
 }
 
@@ -179,7 +186,9 @@ export async function saveList(b: Backend, entries: readonly SecretEntry[]): Pro
     if ((await b.get(pieceName(generation, i))) !== piece) throw new Error('a saved piece did not read back the same, so the save was abandoned')
   }
   const index: Index = { v: 1, generation, pieces: pieces.length, checksum: await checksumOf(text), count: entries.length }
+  if (entries.length > 0) await b.markList?.(true)
   await b.put(INDEX, encode(JSON.stringify(index)))
+  if (entries.length === 0) await b.markList?.(false)
   if (old) await clear(b, old.generation, 0, old.pieces)
   await clearStrays(b, generation, pieces.length)
 }

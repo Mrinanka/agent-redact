@@ -11,6 +11,7 @@ import type { CatchEntry } from './lib/core/session.ts'
 import { checkerOptions, compileAllow, DEFAULTS, resolveSettings, type Settings, type SourceName } from './lib/core/settings.ts'
 import type { SecretEntry } from './lib/core/store.ts'
 import { loadRegisteredSecrets } from './backends.ts'
+import { allowedTags } from './state.ts'
 import { writeLog } from './log-file.ts'
 import { warn } from './warn.ts'
 
@@ -27,11 +28,17 @@ export type Runtime = {
 
 const REFRESH_MS = 10_000
 const MAX_TOOL_FILES = 1000
+/** A failed read can take 20 s, so a locked store is asked again rarely. */
+const RETRY_FIRST_MS = 60_000
+const RETRY_MOST_MS = 900_000
 
 let current: Runtime | undefined
 let building: Promise<Runtime> | undefined
 let loadedAt = Number.NEGATIVE_INFINITY
 let registered: SecretEntry[] | undefined
+let retryAt = Number.POSITIVE_INFINITY
+let retryDelay = RETRY_FIRST_MS
+let rebuild = false
 let reported = ''
 const toolFiles = new Map<string, string>()
 
@@ -98,20 +105,32 @@ async function build($: EngineInterface): Promise<Runtime> {
 
   const now = await $.clock.now()
   let runtime: Runtime
-  if (current && current.key === key) {
+  if (registered !== undefined && now >= retryAt) {
+    registered = undefined
+    rebuild = true
+  }
+  if (current && current.key === key && !rebuild) {
     runtime = { ...current, problems, notices: resolved.notices }
   } else {
     const { allow, errors: allowErrors } = compileAllow(resolved.settings.allow)
     const { checker, errors: ruleErrors } = createChecker(checkerOptions(resolved.settings))
     problems.push(...allowErrors, ...ruleErrors.map((r: Rejection) => `custom rule ${r.id} refused: ${r.reason}`))
     // Read once per worker: the store can take a second, and a restarted worker reads it again.
-    if (registered === undefined) registered = await loadRegisteredSecrets($)
+    if (registered === undefined) {
+      const load = await loadRegisteredSecrets($)
+      registered = load.entries
+      retryAt = load.failed ? now + retryDelay : Number.POSITIVE_INFINITY
+      retryDelay = load.failed ? Math.min(retryDelay * 2, RETRY_MOST_MS) : RETRY_FIRST_MS
+    }
+    rebuild = false
     const redactor = new Redactor({ checker, registered, hints: resolved.settings.hints === 'on', allow })
     redactor.importCatches(current ? current.redactor.exportCatches() : await readCatches($))
+    for (const tag of await allowedTags($).catch(() => [])) redactor.allowTag(tag)
     runtime = { settings: resolved.settings, redactor, problems, notices: resolved.notices, key, savedVersion: redactor.persistVersion }
   }
   current = runtime
-  loadedAt = now
+  // A save during this build: the list just read may be the old one, so don't count this as fresh.
+  loadedAt = rebuild ? Number.NEGATIVE_INFINITY : now
 
   const signature = JSON.stringify([problems, resolved.notices])
   if (signature !== reported) {
@@ -131,7 +150,15 @@ export async function ready($: EngineInterface): Promise<Runtime> {
       building = undefined
     })
   }
-  return building
+  const rt = await building
+  return rebuild ? ready($) : rt
+}
+
+/** After a save: the next use reads the list again and builds a new matcher, which also clears the repeated-line memory (spec §18). */
+export function registeredChanged(): void {
+  registered = undefined
+  rebuild = true
+  loadedAt = Number.NEGATIVE_INFINITY
 }
 
 /** Keeps the session's catches and tags in the host's memory, so a restarted worker has them. */

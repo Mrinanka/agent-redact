@@ -80,6 +80,14 @@ Tiny clarifications go under **Minor** at the bottom.
 | D-052 | What is remembered is capped, because a matcher build can't be interrupted | accepted | step 3 | 7, 8.1 |
 | D-053 | What is kept for a restart is capped at one `$.state` write, catches first | accepted | step 3 | 8.1, 9, 12 |
 | D-054 | Four `/code-review high` findings from step 3 are rejected | accepted | step 3 | 8.1 |
+| D-055 | Self-protection covers the tool's files and the settings that switch it off | accepted | 4 | 17, 22 |
+| D-056 | The resume block drops the next prompt | accepted | 4 | 6.1 |
+| D-057 | `/redact add` takes the secret in a pane, never on the command line | accepted | 4 | 8, 15, 22 |
+| D-058 | Self-protection stays on in observe mode | accepted | 4 | 13 |
+| D-059 | The plain doctor command is `/secret-shield:doctor` | accepted | 4 | 5.3, 15 |
+| D-060 | `/redact allow` with no tag, and `--always` in the OS store | accepted | 4 | 10, 11, 15 |
+| D-061 | A small flag file says a list exists | accepted | 4 | 8.1 |
+| D-062 | A registered door, and the matcher build measured in the real worker | accepted | 4 | 20 |
 
 ## Entry template (short form, from D-018 on)
 
@@ -575,6 +583,62 @@ Tiny clarifications go under **Minor** at the bottom.
 - Why: The owner said to ignore these after a check of each against the code. First: its premise was false, since no registered-value limit exists and 8,192 is above `MAX_VALUE_FOR_PATTERNS`, not below it. Second: no such list can exist, because nothing outside the tests calls `saveList`, and D-045 chose the cap. Third: rules compile lazily, so it doesn't recompile them all. Fourth: the literal pins D-052's number, and the tests stay far inside their limits.
 - Rejected: Fixing them in step 3 (no real failure to fix).
 - Evidence: Measured on Windows under Node in that check: a 190 KB registered value builds in 189 ms, against 763 ms for the 1,900-secret list D-045 accepted. A fresh checker takes about 2 ms; sharing one saves about 0.5 s of a 13.4 s measure run. The timing tests took at most 309 and 275 ms against limits of 2,000 and 3,000, and 652 and 556 ms with every core busy. Still open: the matcher build under the real worker (progress, Known issues).
+
+## D-055: Self-protection covers the tool's files and the settings that switch it off
+- Date / Step: 2026-11-01 / 4        Status: accepted
+- Decision: Deny any write to the data and plugin folders. In Claude Code settings files, deny only a change to `disableAllHooks`, `allowManagedHooksOnly`, `hooks`, `enabledPlugins`, `secretShield` or `env.CLAUDE_CODE_SIMPLE`. Bash and PowerShell get a best-effort text check.
+- Why: Check 0.14: one setting silently turns both locks off, and spec §3 has injection in scope. The owner chose this option.
+- Rejected: Own files only (leaves the hole). Denying all settings writes (blocks ordinary edits).
+- Evidence: Findings 0.14; a real run stopped a Write of `disableAllHooks`; `tests/core-lock.test.ts`. Weak spot: a disguised shell command, in spec §22.
+
+## D-056: The resume block drops the next prompt
+- Date / Step: 2026-11-01 / 4        Status: accepted
+- Decision: Scan at `prompt.submit` and drop the prompt with R-06's message; skip `session.compact`; hold `turn.step` as a backstop.
+- Why: The drop shows the reason, and `/compact` would send the history too. The owner chose this option after asking whether old chats stay usable.
+- Rejected: `turn.step` hold alone: `-p` prints only "Execution error" and exits 1.
+- Evidence: Scratch runs on 2.1.316: drop printed the reason with no request; skip made no request. Leak door `resume`: 0 of 7, no request. Not yet hand-checked in an interactive `/resume`.
+
+## D-057: `/redact add` takes the secret in a pane, never on the command line
+- Date / Step: 2026-11-01 / 4        Status: accepted
+- Decision: A pane with an `Input`; the value goes to the store on stdin. Anything but `--label name` after `add` is refused, taken off the command row, and the person is told to rotate.
+- Why: A value in the args stayed in history and reached the model on the next run, and with hooks off it went straight to the model. The owner chose this option.
+- Rejected: Accepting args and masking (relies on masking, and fails open with hooks off).
+- Evidence: Scratch runs; real run: no value on disk or in a request after the refusal. Cost: `Input` has no masking (`claude-code.d.ts:5656`), so it shows while typed, and there is no `add` in `-p`.
+
+## D-058: Self-protection stays on in observe mode
+- Date / Step: 2026-11-01 / 4        Status: accepted
+- Decision: Detections go log-only; denials of writes to the tool's files and kill switches continue.
+- Why: Spec §13 and §17 disagreed. An injection during a trial must not switch the tool off. The owner chose this option.
+- Rejected: Everything log-only.
+- Evidence: `plugin/hooks/lock.test.ts`.
+
+## D-059: The plain doctor command is `/secret-shield:doctor`
+- Date / Step: 2026-11-01 / 4        Status: accepted
+- Decision: `plugin/commands/doctor.md` says the hooks are off; while they run, a `command.run` hook answers it instead. Its name follows the final plugin name.
+- Why: A plugin's markdown command always carries the plugin's name, so `/redact doctor` can't work with hooks off. Approved with the step 4 plan.
+- Rejected: A bare `/redact` markdown command (does not resolve).
+- Evidence: Scratch runs on 2.1.316; real run with `disableAllHooks`: the body reached the model. `disable-model-invocation` kept the model out, and the engine refuses a registered command through Skill.
+
+## D-060: `/redact allow` with no tag, and `--always` in the OS store
+- Date / Step: 2026-11-01 / 4        Status: accepted
+- Decision: With no tag it lifts a resume block, or gives the last guarded file one pass. `--always` saves the value as a `harmless` list entry.
+- Why: R-06 and R-11 name a bare allow. A settings file is plain text, so `allow` there would break R-09 for a value marked from a tag. Approved with the step 4 plan.
+- Rejected: Writing the value into settings.
+- Evidence: `plugin/hooks/lock.test.ts`.
+
+## D-061: A small flag file says a list exists
+- Date / Step: 2026-11-01 / 4        Status: accepted
+- Decision: `saveList` writes a non-secret `has-list` file before the index and clears it when the list is emptied. `hasList()` answers from it first. A list that can't be read warns, reports `locked`, is retried after 1 minute, doubling to 15, and refuses saves.
+- Why: A locked store could pass for "no list" with no warning (progress, Known issues).
+- Rejected: Reading the store to find out (the gap itself).
+- Evidence: `tests/core-store-locked.test.ts`; real locked stores in CI through `tests/store-locked-real.test.ts`.
+
+## D-062: A registered door, and the matcher build measured in the real worker
+- Date / Step: 2026-11-01 / 4        Status: accepted
+- Decision: `STORE_SCENARIOS` holds a `registered` door of bare values. It runs on Windows, or with `--allow-real-store`, because elsewhere the store is the machine's own. Closes D-054's open item.
+- Why: Nothing had run a saved list through a real session. Doing so found a real bug: with `OS` unset, Windows read as Linux and the list was silently skipped; `SYSTEMROOT` now counts too.
+- Rejected: Hook tests alone (they missed that).
+- Evidence: Windows, pinned 2.1.316: a list of 1,900 values, a 3.6 s session, the value hidden, 0 failure lines. `registered` door 0 of 7. Windows only so far.
 
 ---
 

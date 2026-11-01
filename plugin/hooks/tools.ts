@@ -1,0 +1,162 @@
+// What happens around a tool call: self-protection (spec §17), the outbound check (§11), the overwrite
+// guard and the placeholder notice (§10). A refusal names a tag and a kind, never a value.
+
+import type { EngineInterface } from 'claude-code'
+import { osOf } from './backends.ts'
+import { now } from './lib/core/decoder.ts'
+import { applyEdit, checkOverwrite, placeholdersIn } from './lib/core/guard.ts'
+import { isChecked, outboundText, outboundVerdict } from './lib/core/outbound.ts'
+import { blockedSettingsChange, isProtected, isSettingsFile, shellChangesProtected, type Roots } from './lib/core/protect.ts'
+import type { Hit } from './lib/core/session.ts'
+import { writeLog } from './log-file.ts'
+import { configDir, dataDir } from './paths.ts'
+import { ready, type Runtime } from './runtime.ts'
+import { addPlaced, guardPass, setGuardPass } from './state.ts'
+import { warn } from './warn.ts'
+
+const BUDGET_MS = 3000
+const MAX_FILE_CHARS = 4_000_000
+
+type Input = Record<string, unknown>
+const text = (v: unknown): string => (typeof v === 'string' ? v : '')
+
+/** The file a writing tool names, or nothing for any other tool. */
+const pathOf = (tool: string, e: Input): string | undefined => (tool === 'Write' || tool === 'Edit' ? text(e.file_path) : tool === 'NotebookEdit' ? text(e.notebook_path) : undefined)
+
+export async function rootsOf($: EngineInterface): Promise<Roots> {
+  const os = await osOf($)
+  return { own: [await dataDir($), $.plugin.root], config: await configDir($), caseless: os !== 'linux' }
+}
+
+async function readIfThere($: EngineInterface, path: string): Promise<string> {
+  try {
+    return (await $.fs.exists(path)) ? String(await $.fs.read(path)) : ''
+  } catch {
+    return ''
+  }
+}
+
+async function landing($: EngineInterface, path: string): Promise<string> {
+  try {
+    return (await $.fs.stat(path, { resolve: true })).realPath ?? path
+  } catch {
+    return path
+  }
+}
+
+async function logEvent($: EngineInterface, rt: Runtime, event: 'block' | 'warn' | 'notice', where: string, detail: string, tag?: string): Promise<void> {
+  const clean = (t: string): string => rt.redactor.redactText(t, { deadline: now() + 500 }).text
+  await writeLog($, [{ t: await $.clock.now(), event, door: 'tool', where, detail, mode: rt.settings.mode, ...(tag ? { tag } : {}) }], clean)
+}
+
+const named = (hits: readonly Hit[]): string => [...new Set(hits.map(h => `${h.label} #${h.tag}`))].slice(0, 5).join(', ')
+
+/** Self-protection stays on in observe mode (D-058): it is no detection, and it keeps a trial honest. */
+async function protect($: EngineInterface, rt: Runtime, tool: string, e: Input): Promise<string | undefined> {
+  const roots = await rootsOf($)
+  const path = pathOf(tool, e)
+  if (path) {
+    const real = await landing($, path)
+    if (isProtected(path, roots) || isProtected(real, roots)) return "that file belongs to secret-shield, and Claude can't change it"
+    if (isSettingsFile(path, roots) || isSettingsFile(real, roots)) {
+      const before = await readIfThere($, path)
+      const after = tool === 'Write' ? text(e.content) : applyEdit(before, text(e.old_string), text(e.new_string), e.replace_all === true)
+      const key = after === undefined ? undefined : blockedSettingsChange(before, after)
+      if (key) return `that change touches ${key}, which could switch secret-shield off. Only you can change it`
+    }
+  } else if (tool === 'Bash' || tool === 'PowerShell') {
+    const what = shellChangesProtected(text(e.command), roots)
+    if (what) return `that command would change ${what}. Only you can do that`
+  }
+  return undefined
+}
+
+async function outbound($: EngineInterface, rt: Runtime, tool: string, e: Input): Promise<string | undefined> {
+  if (!isChecked(tool) || rt.settings.outbound === 'off') return undefined
+  const found = rt.redactor.findKnown(outboundText(e), now() + BUDGET_MS)
+  const hits = found.hits.filter(h => h.action !== 'warn')
+  if (!found.complete) throw new Error('outbound check ran out of time')
+  const verdict = outboundVerdict(rt.settings.outbound, hits)
+  if (verdict === 'go' || verdict === 'ask') return undefined
+  if (rt.settings.mode === 'observe') {
+    await logEvent($, rt, 'notice', tool, 'would have blocked: a known value in a tool call', hits[0]?.tag)
+    return undefined
+  }
+  await logEvent($, rt, verdict === 'block' ? 'block' : 'warn', tool, 'a known value in a tool call', hits[0]?.tag)
+  if (verdict === 'warn') {
+    warn($, 'outbound', `a ${tool} call holds a hidden value (${named(hits)}) and was let through, because outbound is warn`)
+    return undefined
+  }
+  warn($, 'outbound', `a ${tool} call was stopped: it holds a hidden value (${named(hits)}). If it is harmless, run /redact allow <tag>.`)
+  return `this ${tool} call holds a hidden value (${named(hits)}), so it was stopped. Ask the user to run it themselves, or to run /redact allow with the tag.`
+}
+
+async function guard($: EngineInterface, rt: Runtime, tool: string, e: Input): Promise<string | undefined> {
+  const path = pathOf(tool, e)
+  if (!path) return undefined
+  const disk = await readIfThere($, path)
+  if (disk === '') return undefined
+  if (disk.length > MAX_FILE_CHARS) throw new Error('file too large for the overwrite guard')
+  const after = tool === 'Edit' ? applyEdit(disk, text(e.old_string), text(e.new_string), e.replace_all === true) : text(tool === 'Write' ? e.content : e.new_source)
+  if (after === undefined) return undefined
+  const out = checkOverwrite(rt.redactor, { path, disk, after, deadline: now() + BUDGET_MS })
+  if (!out.complete) throw new Error('overwrite guard ran out of time')
+  if (!out.blocked) return undefined
+  if (rt.settings.mode === 'observe') {
+    await logEvent($, rt, 'notice', path, 'would have blocked: a real secret would be replaced by its placeholder', out.tags[0])
+    return undefined
+  }
+  const pass = await guardPass($)
+  if (pass?.file === path) {
+    await setGuardPass($, null)
+    await logEvent($, rt, 'notice', path, 'overwrite guard let through once by the person', out.tags[0])
+    return undefined
+  }
+  await setGuardPass($, null)
+  pendingGuard = path
+  await logEvent($, rt, 'block', path, 'a real secret would be replaced by its placeholder', out.tags[0])
+  warn($, 'guard', 'a change was stopped because it would replace a real secret with its placeholder. To let it through once, run /redact allow.')
+  return 'this would replace a real secret in the file with its placeholder, and the secret would be lost. Change only the lines you need and leave placeholder lines alone. The user can let it through once with /redact allow.'
+}
+
+let pendingGuard: string | undefined
+
+/** The file the last guard block named: what a bare `/redact allow` lets through once. */
+export const lastGuardBlock = (): string | undefined => pendingGuard
+
+export function clearGuardBlock(): void {
+  pendingGuard = undefined
+}
+
+export async function beforeTool($: EngineInterface, tool: string, e: Input): Promise<string | undefined> {
+  const rt = await ready($)
+  return (await protect($, rt, tool, e)) ?? (await outbound($, rt, tool, e)) ?? (await guard($, rt, tool, e))
+}
+
+/** The `ask` setting: a person decides, so this answers at tool.check. */
+export async function askReason($: EngineInterface, tool: string, input: unknown): Promise<string | undefined> {
+  const rt = await ready($)
+  if (rt.settings.outbound !== 'ask' || rt.settings.mode === 'observe' || !isChecked(tool)) return undefined
+  const found = rt.redactor.findKnown(outboundText(input), now() + BUDGET_MS)
+  const hits = found.hits.filter(h => h.action !== 'warn')
+  if (hits.length === 0) return undefined
+  await logEvent($, rt, 'notice', tool, 'asked the person about a known value', hits[0]?.tag)
+  return `secret-shield: this ${tool} call holds a hidden value (${named(hits)}). Allow it?`
+}
+
+/** The notice after a write: a placeholder stays as text, and the person fills in the value (spec §10). */
+export async function afterTool($: EngineInterface, tool: string, e: Input): Promise<void> {
+  const path = pathOf(tool, e)
+  if (!path) return
+  const written = text(tool === 'Write' ? e.content : tool === 'Edit' ? e.new_string : e.new_source)
+  const tags = new Set(placeholdersIn(written).map(p => p.tag))
+  if (tags.size === 0) return
+  const rt = await ready($)
+  const content = tool === 'Write' ? written : await readIfThere($, path)
+  const found = placeholdersIn(content).filter(p => tags.has(p.tag))
+  const name = rt.redactor.redactText(path, { deadline: now() + 500 }).text
+  await addPlaced($, found.map(p => ({ file: name, line: p.line, tag: p.tag })))
+  if (rt.settings.notices === 'off') return
+  const short = name.slice(Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\')) + 1)
+  for (const p of found.slice(0, 5)) $.ui.log(`secret-shield: Claude wrote a placeholder into ${short}, line ${p.line}. Fill in the real value.`)
+}

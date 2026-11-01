@@ -25,6 +25,7 @@ export type Tools = { exec: Exec; files: Files; service?: string }
 export const SERVICE = 'secret-shield'
 const TIMEOUT_MS = 20_000
 const INDEX = 'index'
+const FLAG = 'has-list'
 
 /**
  * How much one item holds, and how many items a list may use. Set from `npm run measure:store`
@@ -41,6 +42,15 @@ const SETUP = '$in = [Console]::In.ReadToEnd().Trim(); Add-Type -AssemblyName Sy
 const PROTECT = `${SETUP}; $b = [Text.Encoding]::ASCII.GetBytes($in); [Convert]::ToBase64String([Security.Cryptography.ProtectedData]::Protect($b, $null, 'CurrentUser'))`
 const UNPROTECT = `${SETUP}; $b = [Convert]::FromBase64String($in); [Text.Encoding]::ASCII.GetString([Security.Cryptography.ProtectedData]::Unprotect($b, $null, 'CurrentUser'))`
 
+/** A sign that a list exists, for the stores where a locked read can look like "no item". It holds nothing else. */
+function flagged(files: Files, read: () => Promise<boolean>): Pick<Backend, 'hasList' | 'markList'> {
+  const path = files.path(FLAG)
+  return {
+    hasList: async () => ((await files.exists(path)) && (await files.read(path)).trim() !== '' ? true : read()),
+    markList: exists => files.write(path, exists ? '1\n' : ''),
+  }
+}
+
 async function statusFrom(run: () => Promise<ExecResult>, ok: (r: ExecResult) => boolean): Promise<StoreStatus> {
   try {
     return ok(await run()) ? 'ok' : 'locked'
@@ -49,13 +59,13 @@ async function statusFrom(run: () => Promise<ExecResult>, ok: (r: ExecResult) =>
   }
 }
 
-function macos({ exec, service }: Tools & { service: string }): Backend {
+function macos({ exec, files, service }: Tools & { service: string }): Backend {
   const id = (name: string): string[] => ['-a', name, '-s', service]
   const backend: Backend = {
     id: 'keychain',
     ...LIMITS.macos,
     status: () => statusFrom(() => exec(['security', 'default-keychain'], { timeoutMs: TIMEOUT_MS }), r => r.exitCode === 0),
-    hasList: async () => (await backend.get(INDEX)) !== undefined,
+    ...flagged(files, async () => (await backend.get(INDEX)) !== undefined),
     put: async (name, text) => {
       // `security -i` reads the command from stdin, so the value is on no command line (D-036).
       const r = await exec(['security', '-i'], { stdin: `add-generic-password -a ${name} -s ${service} -U -w "${text}"\n`, timeoutMs: TIMEOUT_MS })
@@ -74,13 +84,13 @@ function macos({ exec, service }: Tools & { service: string }): Backend {
   return backend
 }
 
-function linux({ exec, service }: Tools & { service: string }): Backend {
+function linux({ exec, files, service }: Tools & { service: string }): Backend {
   const id = (name: string): string[] => ['service', service, 'account', name]
   const backend: Backend = {
     id: 'secret-service',
     ...LIMITS.linux,
     status: () => statusFrom(() => exec(['secret-tool', 'lookup', ...id(INDEX)], { timeoutMs: TIMEOUT_MS }), r => r.exitCode === 0 || r.stderr.trim() === ''),
-    hasList: async () => (await backend.get(INDEX)) !== undefined,
+    ...flagged(files, async () => (await backend.get(INDEX)) !== undefined),
     put: async (name, text) => {
       const r = await exec(['secret-tool', 'store', `--label=${service}`, ...id(name)], { stdin: text, timeoutMs: TIMEOUT_MS })
       if (r.exitCode !== 0) throw new Error('the Secret Service refused the write')

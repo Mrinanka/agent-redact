@@ -24,7 +24,7 @@ fs.writeFileSync(config, JSON.stringify({
     jsx: 'react', jsxFactory: 'h', jsxFragmentFactory: 'Fragment',
     paths: { 'claude-code': [types], 'claude-code/testing': [types] },
   },
-  include: [types, path.join(root, 'plugin', 'hooks', '**', '*.ts'), path.join(root, 'plugin', 'types', '*.d.ts')],
+  include: [types, path.join(root, 'plugin', 'hooks', '**', '*.ts'), path.join(root, 'plugin', 'hooks', '**', '*.tsx'), path.join(root, 'plugin', 'types', '*.d.ts')],
 }))
 const tsc = path.join(root, 'node_modules', 'typescript', 'bin', 'tsc')
 const r = spawnSync(process.execPath, [tsc, '-p', config], { encoding: 'utf8', cwd: root })

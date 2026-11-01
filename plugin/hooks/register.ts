@@ -8,6 +8,13 @@
 import type { Register } from 'claude-code'
 import { cleanAppend, cleanAttachment, cleanContext, cleanSubmit, failedAppend, failedAttachment, failedCompose, failedContext, failedLifecycle, failedSubmit, PLACEHOLDER_NOTE, shutDown, startUp, stillRunning } from './handlers.ts'
 import { NOTE_ID } from './lib/core/note.ts'
+import { DOCTOR, doctor, isOwnCommandCall, isPerson, redactCommand } from './commands.ts'
+import { checkMention, failedMention } from './mention.ts'
+import { failureMode } from './runtime.ts'
+import { safeResumeBlock } from './resume.ts'
+import { afterTool, askReason, beforeTool } from './tools.ts'
+import { drawBanner } from './banner.tsx'
+import { drawAdd, drawLearn } from './panes.tsx'
 
 export const register: Register = on => {
   // All hiding: every row the conversation keeps passes through here before it is stored.
@@ -24,6 +31,10 @@ export const register: Register = on => {
   // The prompt as typed, before it is recorded anywhere. A slash command's line goes to session.append.
   on('prompt.submit', async ($, e, next) => {
     await stillRunning($)
+    if (e.command?.name !== 'redact' && e.command?.name !== DOCTOR) {
+      const reason = await safeResumeBlock($)
+      if (reason) return { drop: reason }
+    }
     if (e.command) return next(e)
     const out = await cleanSubmit($, e)
     if ('drop' in out) return { drop: out.drop }
@@ -54,6 +65,64 @@ export const register: Register = on => {
     await failedCompose($, next.error.kind)
     return next(e)
   })
+
+  // A resumed history with a secret: compaction would send it too (R-06).
+  on('session.compact', async ($, e, next) => {
+    const reason = await safeResumeBlock($)
+    return reason ? { skip: reason } : next(e)
+  }).catch(async ($, e, next) => {
+    if (next.called) return next(e)
+    return (await failureMode($)) === 'hold' ? { skip: 'secret-shield could not check this session, so it was not compacted.' } : next(e)
+  })
+
+  // The backstop for a turn with no prompt: the request is held and never sent.
+  on('turn.step', async function* ($, e, next) {
+    const reason = await safeResumeBlock($)
+    if (!reason) return yield* next(e)
+    return { turnId: e.turnId, index: e.index, answer: reason, toolUses: [], stopReason: 'end_turn', usage: null }
+  })
+
+  on('tool.call', async ($, e, next) => {
+    const input = e as unknown as Record<string, unknown>
+    if (isOwnCommandCall(String(e.tool), input)) return { deny: 'Only the user can run this command.' }
+    const deny = await beforeTool($, String(e.tool), input)
+    if (deny) return { deny: `secret-shield: ${deny}` }
+    const ran = await next(e)
+    if (ran.deny === undefined && ran.isError !== true) await afterTool($, String(e.tool), input).catch(() => undefined)
+    return ran
+  }).catch(async ($, e, next) => {
+    if (next.called) return next(e)
+    const held = (await failureMode($)) === 'hold'
+    await failedLifecycle($, 'tool', next.error.kind)
+    return held ? { deny: 'secret-shield could not check this call, so it was stopped.' } : next(e)
+  })
+
+  on('tool.check', async ($, e, next) => {
+    const reason = await askReason($, e.tool, e.input)
+    return reason ? { decision: 'ask' as const, reason } : next(e)
+  }).catch(async ($, e, next) => ((await failureMode($)) === 'hold' ? { decision: 'deny' as const, reason: 'secret-shield could not check this call.' } : next(e)))
+
+  on('prompt.mention', async ($, e, next) => {
+    const out = await checkMention($, e.path)
+    if (out === 'as-is') return next(e)
+    return 'deny' in out ? { deny: out.deny } : next({ ...e, path: out.path })
+  }).catch(async ($, e, next) => {
+    if (next.called) return next(e)
+    const deny = await failedMention($, next.error.kind, (await failureMode($)) === 'hold')
+    return deny ? { deny } : next(e)
+  })
+
+  on('command.run', { command: 'redact' }, async ($, e) => {
+    if (!isPerson(e.origin?.kind)) return { text: 'Only you can run /redact.' }
+    return { text: await redactCommand($, e.args) }
+  })
+
+  // The plain command answers when the hooks are off; while they run, this answers it instead (R-05).
+  on('command.run', { command: DOCTOR }, async $ => ({ text: await doctor($) }))
+
+  on('ui.render', { component: 'Pane', requestId: 'secret-shield-add' }, ($, e) => drawAdd($, e))
+  on('ui.render', { component: 'Pane', requestId: 'secret-shield-learn' }, ($, e) => drawLearn($, e))
+  on('ui.render', { component: 'AbovePrompt' }, ($, e, next) => drawBanner($, e, next))
 
   on('session.start', async ($, e, next) => {
     await startUp($)

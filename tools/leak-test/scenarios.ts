@@ -15,6 +15,8 @@ export type Ctx = {
   /** The door's witness and fakes, one per line. */
   block: (door: string) => string
   witness: (door: string) => string
+  /** The witness and the door's fake values, one per line, with no label or other sign. */
+  bare: (door: string) => string
 }
 
 export type Run = {
@@ -38,6 +40,10 @@ export type Scenario = {
   mcp?: string
   /** The door whose block a settings hook adds as context. */
   contextHook?: string
+  /** With the tool on, this door is proven by being stopped: no request, and this on stdout. */
+  heldMessage?: RegExp
+  /** Saves the door's values in the real OS store first (needs --allow-real-store, except on Windows). */
+  seedStore?: string
   runs: Run[]
 }
 
@@ -157,6 +163,7 @@ export const SCENARIOS: Scenario[] = [
     name: 'resume',
     doors: ['history'],
     countFromRun: 1,
+    heldMessage: /history contains \d+ secrets/,
     runs: [
       { prompt: c => `Remember this:\n${c.block('history')}\nReply.`, withoutPlugin: true, script: () => steps([]) },
       { prompt: () => 'Reply with ok.', resume: true, script: () => steps([]) },
@@ -173,5 +180,16 @@ export const SCENARIOS: Scenario[] = [
     doors: ['hook-context'],
     contextHook: 'hook-context',
     runs: [{ prompt: () => 'Reply with ok.', script: () => steps([]) }],
+  },
+]
+
+/** Kept apart: they touch the OS password store, which is the machine's own on macOS and Linux. */
+export const STORE_SCENARIOS: Scenario[] = [
+  {
+    name: 'registered',
+    doors: ['registered'],
+    seedStore: 'registered',
+    files: c => ({ 'registered.txt': `line one\n${c.bare('registered')}\n` }),
+    runs: [{ prompt: () => 'Read registered.txt.', script: c => steps([read(c, 'registered.txt')]) }],
   },
 ]
