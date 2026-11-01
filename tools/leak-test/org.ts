@@ -13,6 +13,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { orgPluginSnippet } from '../../src/core/snippet.ts'
+import { GUARDED_ONLY, SCENARIOS, type Scenario } from './scenarios.ts'
 
 export type TierMode = 'guarded' | 'org'
 
@@ -22,9 +23,13 @@ export type TierMode = 'guarded' | 'org'
  *
  * Measured in CI on 2026-11-01 (Claude Code 2.1.316; the same on macOS, Windows and Linux): project instruction files
  * and settings-hook context leak (7 of 7 fakes each). `mention-file` was expected to leak and stayed clean, so it is
- * not listed. The compaction summary door could not be measured on that run: no witness arrived (being diagnosed).
+ * not listed. The compaction summary is stored raw, and the resume check then holds the next message, so the model is
+ * not sent it (scenario `compaction-held`); the hold, not the hiding, is what stops it.
  */
 export const GUARDED_OPEN: string[] = ['claude-md/claude-md', 'hook-context/hook-context']
+
+/** The scenarios of the guarded run: all of them, with the compaction door replaced by the one that proves the hold. */
+export const guardedScenarios = (): Scenario[] => [...SCENARIOS.filter(s => s.name !== 'compaction'), ...GUARDED_ONLY]
 
 /** The organization install cannot run the resume door: it needs a run made before the tool was installed. */
 export const ORG_SCENARIOS: string[] = [

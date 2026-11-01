@@ -16,7 +16,7 @@ import { pinnedVersion, resolveClaude } from './claude-bin.ts'
 import { exitCodeFor, KitError, runKit, type KitOptions } from './kit.ts'
 import { formatReport } from './report.ts'
 import { managedFile, type ManagedFile } from './managed-file.ts'
-import { GUARDED_OPEN, ORG_SCENARIOS, buildMarketplaceFolder, orgManagedContent } from './org.ts'
+import { GUARDED_OPEN, ORG_SCENARIOS, buildMarketplaceFolder, guardedScenarios, orgManagedContent } from './org.ts'
 import { managedFileContent } from './fixtures/backup-settings.ts'
 import { BACKUP_INSIDE, BACKUP_ONLY, BACKUP_OUTSIDE, SCENARIOS, STORE_SCENARIOS } from './scenarios.ts'
 
@@ -116,7 +116,7 @@ function options(): { kit: KitOptions; report?: string } {
   }
   const expect = v.outside ? 'leaks' : v.expect
   const names = v.outside ? BACKUP_OUTSIDE : BACKUP_INSIDE
-  const all = tier === 'org' ? SCENARIOS.filter(s => ORG_SCENARIOS.includes(s.name)) : tier === 'guarded' ? SCENARIOS : backup === undefined ? (withStore ? [...SCENARIOS, ...STORE_SCENARIOS] : SCENARIOS) : [...SCENARIOS, ...BACKUP_ONLY].filter(s => names.includes(s.name))
+  const all = tier === 'org' ? SCENARIOS.filter(s => ORG_SCENARIOS.includes(s.name)) : tier === 'guarded' ? guardedScenarios() : backup === undefined ? (withStore ? [...SCENARIOS, ...STORE_SCENARIOS] : SCENARIOS) : [...SCENARIOS, ...BACKUP_ONLY].filter(s => names.includes(s.name))
   const main = path.join(REPO, 'plugin', 'backup', 'backup', 'main.js')
   if (backup !== undefined && !fs.existsSync(main)) usage('plugin/backup is not built: run npm run plugin:build')
   const unknown = (v.only ?? []).filter(n => !all.some(s => s.name === n))

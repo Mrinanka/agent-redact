@@ -10,8 +10,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { runKit, type KitOptions } from '../tools/leak-test/kit.ts'
-import { GUARDED_OPEN, ORG_SCENARIOS, buildMarketplaceFolder, orgManagedContent, tierProblem } from '../tools/leak-test/org.ts'
-import { SCENARIOS } from '../tools/leak-test/scenarios.ts'
+import { GUARDED_OPEN, ORG_SCENARIOS, buildMarketplaceFolder, guardedScenarios, orgManagedContent, tierProblem } from '../tools/leak-test/org.ts'
+import { GUARDED_ONLY, SCENARIOS } from '../tools/leak-test/scenarios.ts'
 import type { Scenario } from '../tools/leak-test/scenarios.ts'
 
 const STAND_IN = path.join(import.meta.dirname, 'fixtures', 'stand-in-claude.mjs')
@@ -82,6 +82,17 @@ test('the scenario sets: the org run skips the resume door, which needs a run wi
   const doors = new Set(SCENARIOS.flatMap(s => s.doors.map(d => `${s.name}/${d}`)))
   for (const d of GUARDED_OPEN) assert.ok(doors.has(d), d)
   assert.ok(!ORG_SCENARIOS.includes('resume'))
+})
+
+test('guarded run: the compaction door is the held one, because the guard stores the summary raw and the resume check stops the next message', () => {
+  const names = guardedScenarios().map(s => s.name)
+  assert.ok(!names.includes('compaction'), 'the plain compaction scenario would report no witness there')
+  const held = GUARDED_ONLY.find(s => s.name === 'compaction-held')
+  assert.ok(held, 'compaction-held is missing')
+  assert.equal(held.countFromRun, 2)
+  assert.match(String(held.heldMessage), /history contains/)
+  assert.deepEqual(held.doors, ['summary'])
+  for (const n of names) assert.ok([...SCENARIOS, ...GUARDED_ONLY].some(s => s.name === n), n)
 })
 
 // ---- the kit with a stand-in -----------------------------------------------------------------

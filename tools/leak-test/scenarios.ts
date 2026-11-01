@@ -210,6 +210,26 @@ ${c.block('summary')}` }) },
   },
 ]
 
+/**
+ * The compaction summary under Claude Code's built-in guard (kit mode --guarded). The guard passes the `compaction` row
+ * past a user-tier plugin, so the summary is stored raw; the resume check then sees it in the history and stops the next
+ * message (R-06), so the model is never sent it. The door is proven by that stop: no request in the last run, and the
+ * hold message on stdout. A person who runs `/redact allow` lifts the hold and sends it (spec §22).
+ */
+export const GUARDED_ONLY: Scenario[] = [
+  {
+    name: 'compaction-held',
+    doors: ['summary'],
+    countFromRun: 2,
+    heldMessage: /history contains \d+ secrets/,
+    runs: [
+      { prompt: () => 'Remember: nothing in particular. Reply.', script: () => steps([]) },
+      { prompt: () => '/compact', resume: true, script: c => steps([], { summary: `Summary of the chat:\n${c.block('summary')}` }) },
+      { prompt: () => 'Reply with ok.', resume: true, script: () => steps([]) },
+    ],
+  },
+]
+
 /** Kept apart: they touch the OS password store, which is the machine's own on macOS and Linux. */
 export const STORE_SCENARIOS: Scenario[] = [
   {
