@@ -4,13 +4,13 @@ For one developer on their own computer. Administrators: [managed.md](managed.md
 
 ## Install
 
-1. In Claude Code: `/plugin install aegiscontext --marketplace Mrinanka/aegiscontext` (Claude Code 2.1.275 or later).
+1. In Claude Code: `/plugin install aegiscontext --marketplace Mrinanka/aegiscontext` (Claude Code 2.1.309 or later).
 2. Restart the session.
 3. Run `/redact doctor`. It lists the Claude Code version, the plugin's tier, the built-in guard, the password store, the backup lock, Node, the marker and the settings, and says what to fix.
 
 A plugin from a marketplace sits in the `user` tier. Other plugins in a higher tier run first and could skip it, and a few switches turn it off silently: `--safe-mode`, `--bare`, `CLAUDE_CODE_SIMPLE=1`, a project's `disableAllHooks`, and an organization's `allowManagedHooksOnly`. When the hooks do not run, `/redact` does not exist; `/aegiscontext:doctor` still does, and says so.
 
-**On a machine with managed settings, or with a Team or Enterprise login,** Claude Code seats its own guard first and routes project instruction files, attachments and compaction summaries past a user plugin. The plugin warns once per session and `/redact doctor` shows it. See [managed.md](managed.md) for the install that avoids it.
+**On a machine with managed settings or a managed MCP server file, or with a Team or Enterprise login,** Claude Code seats its own guard first and routes instruction files, hook context, attachments and compaction summaries past a user plugin. Any one of those is enough. The plugin warns once per session and `/redact doctor` shows it. Under `on_check_failure: hold` it refuses every request instead, because it cannot check what would be sent. See [managed.md](managed.md) for the install that avoids it.
 
 ## The backup lock
 

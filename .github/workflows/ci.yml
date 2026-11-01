@@ -10,9 +10,10 @@ on:
 permissions:
   contents: read
 
-# A push to a branch with an open PR triggers both events; keep only the newest run.
+# A push to a branch with an open PR triggers both events; keep only the newest run. The group names the repo and the
+# branch the same way for both events (a PR number would never match a push), and a fork's branch stays apart.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
@@ -99,6 +100,9 @@ jobs:
         shell: bash
         run: |
           test -f guarded-report.json && node -e "const r=JSON.parse(require('fs').readFileSync('guarded-report.json','utf8'));for(const x of r.runs)console.log(x.scenario,'run',x.run,'exit',x.exit,'timedOut',x.timedOut,'requests',x.requests,'seconds',x.seconds,JSON.stringify(x.stderr??[]))" || true
+      # Under on_check_failure: hold, the doors that leak above must be refused, with no request sent (D-087).
+      - name: Leak test, user plugin under the built-in guard with hold
+        run: npm run leak-test:guarded-hold -- --require-pinned
       # The plugin reads the policy source from a real managed file, and doctor calls the install Managed.
       - name: Doctor and policy, real managed file
         env:

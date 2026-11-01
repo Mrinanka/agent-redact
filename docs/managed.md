@@ -6,13 +6,13 @@ For an administrator who rolls AegisContext out to many machines. The plugin the
 
 Two reasons:
 
-1. **The built-in guard.** On a machine with managed settings, and with a Team or Enterprise login, Claude Code seats a guard plugin (`sec-default@builtin`) outermost and routes some events past user-tier plugins: project instruction files, attachments, the instructions note, compaction, and some rows. A user-installed copy cannot close that. The organization install can, because `prependPlugins` lets you seat AegisContext outside the guard. `npm run leak-test:guarded` measures what the guard passes over; `npm run leak-test:org` proves the organization install leaves nothing open (both run in CI).
+1. **The built-in guard.** On a machine with managed settings or a managed MCP server file, or with a Team or Enterprise login (any one is enough), Claude Code seats a guard plugin (`sec-default@builtin`) outermost and routes some events past user-tier plugins: instruction files, hook context, attachments, the instructions note, compaction, and some rows. A user-installed copy cannot close that; under `on_check_failure: hold` it refuses every request instead. The organization install can, because `prependPlugins` lets you seat AegisContext outside the guard. `npm run leak-test:guarded` measures what the guard passes over; `npm run leak-test:org` proves the organization install leaves nothing open (both run in CI).
 2. **Only a folder marketplace reaches `prepend`.** A plugin fetched from GitHub or a git URL counts as a user's. The marketplace must be a folder on each machine, with the plugin entry given as a relative path.
 
 ## What you need on each machine
 
-1. **A marketplace folder** holding the release: unpack a release archive (`aegiscontext-<version>.tar.gz` or `.zip`, with `SHA256SUMS`) to a folder of your choice, for example `/opt/aegiscontext` (macOS, Linux) or `C:\Program Files\AegisContext` (Windows). It holds `.claude-plugin/marketplace.json` and `plugin/`. Verify the checksum before you roll it out.
-2. **Managed settings** that name the folder, enable the plugin, and list it first in `prependPlugins`: [snippets/managed-plugin.json](snippets/managed-plugin.json), with `<MARKETPLACE-FOLDER>` replaced by the folder:
+1. **A marketplace folder** holding the release: verify a release archive (`aegiscontext-<tag>.tar.gz` or `.zip`) against `SHA256SUMS`, then unpack it into a folder of your choice, for example `/opt` (macOS, Linux) or `C:\Program Files\AegisContext` (Windows). The archive holds one folder, `aegiscontext-<tag>` (for example `aegiscontext-v0.1.0-rc.1`), and **that folder is the marketplace folder**: it holds `.claude-plugin/marketplace.json` and `plugin/`. A path one level off loads no plugin and shows no error on screen, so run the check below on one machine first.
+2. **Managed settings** that name the folder, enable the plugin, and list it first in `prependPlugins`: [snippets/managed-plugin.json](snippets/managed-plugin.json), with `<MARKETPLACE-FOLDER>` replaced by the full path of that folder:
 
    ```json
    {
@@ -47,7 +47,7 @@ or deliver them by MDM (Jamf, Intune) or from the Claude server. For an offline 
 
 ## Check a machine
 
-Run `/redact doctor` on it. It should say Managed settings are present, show the plugin tier as `prepend`, and say the events reach the plugin.
+Run `/redact doctor` on it. It should say Managed settings are present, show the plugin tier as `prepend`, and say the events reach the plugin. If `/redact` does not exist, the plugin did not load: check that `<MARKETPLACE-FOLDER>` is the folder that holds `.claude-plugin/`.
 
 ## Limits
 

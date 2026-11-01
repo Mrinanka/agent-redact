@@ -48,4 +48,8 @@ test('the plugin reads a aegisContext key from a real managed file, and doctor s
   }
   assert.match(out, /Install: Managed settings are present/)
   assert.match(out, /Settings: valid/)
+  // R-05a: the guard seats on this machine and the plugin is a user plugin, so prompt.compose must not reach it.
+  // The warning's whole sign rests on this, and nothing else runs it against the real guard.
+  assert.match(out, /Plugin tier: user\./)
+  assert.match(out, /Built-in guard: (?:not known yet\. This machine has managed settings|some events are passed over)/)
 })

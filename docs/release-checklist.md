@@ -4,13 +4,14 @@ For the maintainer. The tool never merges or tags by itself.
 
 ## Before the release candidate (`v0.1.0-rc.1`)
 
-- [ ] `develop` is green in CI on the three systems, including `leak-test:org` and `leak-test:guarded`.
+- [ ] `develop` is green in CI on the three systems, including `leak-test:org`, `leak-test:guarded` and `leak-test:guarded-hold`.
 - [ ] `docs/spec.md` section 22 lists the doors `leak-test:guarded` measured (`GUARDED_OPEN` in `tools/leak-test/org.ts`).
 - [ ] The versions agree: `package.json`, `plugin/.claude-plugin/plugin.json`, `plugin/hooks/marker.ts`, `CHANGELOG.md`.
 - [ ] `docs/tested-versions.md` and `docs/scores.md` are current for this release.
+- [ ] Private vulnerability reporting is on (`gh api repos/Mrinanka/aegiscontext/private-vulnerability-reporting` says `enabled`): `SECURITY.md`, `CODE_OF_CONDUCT.md` and the issue template link to it.
 - [ ] `npm run release:pack` on a clean tree (see below).
 - [ ] The merge of `develop` into `release`; `release` is the repository's default branch.
-- [ ] `v0.1.0-rc.1` tagged by the maintainer on `release`. The release workflow runs CI and makes a **draft** release.
+- [ ] `v0.1.0-rc.1` tagged by the maintainer on the tip of `release` (the README install job refuses any other commit). The release workflow runs CI and makes a **draft** release.
 
 ## Before `v0.1.0`
 

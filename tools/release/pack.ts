@@ -54,6 +54,14 @@ export function verifySums(dir: string): string | undefined {
   return undefined
 }
 
+/** The one folder an archive holds, which is the marketplace folder (docs/managed.md). */
+export const releaseFolder = (tag: string): string => `${NAME}-${tag}`
+
+/** `git archive` of HEAD into `file`, in the format its name says. */
+export function writeArchive(root: string, tag: string, file: string): void {
+  git(root, ['archive', `--format=${file.endsWith('.zip') ? 'zip' : 'tar.gz'}`, `--prefix=${releaseFolder(tag)}/`, '-o', file, 'HEAD'])
+}
+
 export type PackOptions = { root: string; tag: string; out: string }
 
 export function packRelease(o: PackOptions): { files: string[] } {
@@ -61,12 +69,10 @@ export function packRelease(o: PackOptions): { files: string[] } {
   const bad = checkTag(o.tag, pkg.version)
   if (bad) throw new ReleaseError(bad)
   if (git(o.root, ['status', '--porcelain']).trim() !== '') throw new ReleaseError('the working tree is not clean (a file is changed, new or staged): commit or remove it first')
-  const archives = ['tar.gz', 'zip'].map(ext => `${NAME}-${o.tag}.${ext}`)
+  const archives = ['tar.gz', 'zip'].map(ext => `${releaseFolder(o.tag)}.${ext}`)
   if (archives.some(f => fs.existsSync(path.join(o.out, f)))) throw new ReleaseError(`${o.out} already holds archives for ${o.tag}`)
   fs.mkdirSync(o.out, { recursive: true })
-  for (const f of archives) {
-    git(o.root, ['archive', `--format=${f.endsWith('.zip') ? 'zip' : 'tar.gz'}`, `--prefix=${NAME}-${o.tag}/`, '-o', path.join(o.out, f), 'HEAD'])
-  }
+  for (const f of archives) writeArchive(o.root, o.tag, path.join(o.out, f))
   const sums = archives.map(f => `${sha256Of(path.join(o.out, f))}  ${f}\n`).join('')
   fs.writeFileSync(path.join(o.out, 'SHA256SUMS'), sums)
   const problem = verifySums(o.out)

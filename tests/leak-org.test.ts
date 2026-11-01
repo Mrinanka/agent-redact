@@ -10,8 +10,9 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { runKit, type KitOptions } from '../tools/leak-test/kit.ts'
-import { GUARDED_OPEN, ORG_SCENARIOS, buildMarketplaceFolder, guardedScenarios, orgManagedContent, tierProblem } from '../tools/leak-test/org.ts'
+import { GUARDED_HOLD_MESSAGE, GUARDED_OPEN, ORG_SCENARIOS, buildMarketplaceFolder, guardedHoldScenarios, guardedScenarios, orgManagedContent, tierProblem, warningProblem } from '../tools/leak-test/org.ts'
 import { GUARDED_ONLY, SCENARIOS } from '../tools/leak-test/scenarios.ts'
+import { guardHeld, guardWarning } from '../src/core/guard-check.ts'
 import type { Scenario } from '../tools/leak-test/scenarios.ts'
 
 const STAND_IN = path.join(import.meta.dirname, 'fixtures', 'stand-in-claude.mjs')
@@ -53,6 +54,17 @@ test('guarded proof: a guard that never logged is a problem too', () => {
   assert.match(tierProblem(noGuard, 'guarded') ?? '', /guard/)
 })
 
+test('warning proof: the organization install must never show the pass-over warning', () => {
+  assert.equal(warningProblem(ORG_LOG, 'org', true), undefined)
+  assert.match(warningProblem(`${ORG_LOG}\n[DEBUG] [aegiscontext] $.ui.log: aegiscontext: ${guardWarning()}`, 'org', true) ?? '', /warning/)
+})
+
+test('warning proof: a guarded run that sent a request must show it; one that sent none says nothing either way', () => {
+  assert.equal(warningProblem(`${GUARDED_LOG}\n[DEBUG] [aegiscontext] $.ui.log: aegiscontext: ${guardWarning()}`, 'guarded', true), undefined)
+  assert.match(warningProblem(GUARDED_LOG, 'guarded', true) ?? '', /warning/)
+  assert.equal(warningProblem(GUARDED_LOG, 'guarded', false), undefined)
+})
+
 test('the organization settings: a folder marketplace, the plugin enabled, and the guard listed after it', () => {
   const dir = path.join(os.tmpdir(), 'org folder', 'market')
   const c = orgManagedContent(dir)
@@ -74,6 +86,27 @@ test('the folder marketplace holds the manifest and the plugin, also at a path w
   } finally {
     fs.rmSync(base, { recursive: true, force: true })
   }
+})
+
+test('the folder comes from a real release archive: it is what `git archive` holds one folder down, as docs/managed.md says', () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'org market-'))
+  try {
+    const dir = path.join(base, 'market')
+    buildMarketplaceFolder(dir, ROOT)
+    assert.ok(fs.existsSync(path.join(dir, 'CHANGELOG.md')), 'a copy of two folders would not hold this; the archive does')
+    const doc = fs.readFileSync(path.join(ROOT, 'docs', 'managed.md'), 'utf8')
+    assert.match(doc, /aegiscontext-<tag>/, 'the doc names the folder inside the archive')
+    assert.ok(!doc.includes('for example `/opt/aegiscontext`'), 'that folder does not hold the marketplace after unpacking')
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true })
+  }
+})
+
+test('the guarded hold run: the two doors that leak under allow, each proven by the refusal and no request', () => {
+  const held = guardedHoldScenarios()
+  assert.deepEqual(held.map(s => s.name), GUARDED_OPEN.map(d => d.split('/')[0]))
+  for (const s of held) assert.equal(s.heldMessage, GUARDED_HOLD_MESSAGE)
+  assert.match(guardHeld(), GUARDED_HOLD_MESSAGE)
 })
 
 test('the scenario sets: the org run skips the resume door, which needs a run without the tool, and every name is real, doors as scenario/door', () => {
@@ -112,6 +145,17 @@ const opts = (mode: string, extra: Partial<KitOptions> = {}): KitOptions => ({
 test('a run whose debug log proves the tier is judged by what the model saw', async () => {
   const r = await runKit(opts('debug-log', { tierProof: 'org', extraEnv: { STAND_IN_DEBUG: ORG_LOG } }))
   assert.equal(r.verdict, 'pass')
+})
+
+test('a guarded run that sends a request with no warning in its debug log is invalid, never a pass', async () => {
+  const guarded = (log: string) => opts('debug-log', { tierProof: 'guarded', expectFor: () => 'clean', extraEnv: { STAND_IN_DEBUG: log } })
+  assert.equal((await runKit(guarded(GUARDED_LOG))).verdict, 'invalid')
+  assert.equal((await runKit(guarded(`${GUARDED_LOG}\n${guardWarning()}`))).verdict, 'pass')
+})
+
+test('an organization run whose debug log shows the warning is invalid, never a pass', async () => {
+  const r = await runKit(opts('debug-log', { tierProof: 'org', extraEnv: { STAND_IN_DEBUG: `${ORG_LOG}\n${guardWarning()}` } }))
+  assert.equal(r.verdict, 'invalid')
 })
 
 test('a run whose debug log lacks the proof is invalid, never clean', async () => {
@@ -160,6 +204,11 @@ test('--org and --guarded write the managed file, so they need --allow-managed-f
     assert.equal(r.status, 2, mode)
     assert.match(r.stderr, /--allow-managed-file/, mode)
   }
+})
+
+test('--hold goes with --guarded alone', () => {
+  assert.equal(cli('--hold', '--claude', process.execPath).status, 2)
+  assert.match(cli('--org', '--hold', '--allow-managed-file').stderr, /--hold/)
 })
 
 test('--org and --guarded exclude each other and the backup modes', () => {

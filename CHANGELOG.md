@@ -19,7 +19,7 @@ The first public release candidate. `v0.1.0` follows two weeks of daily use and 
 
 ### Known limits
 
-See `docs/spec.md` section 22 and the README. The main ones: secrets with no known shape, content sent before the tool was installed, Claude Code's own disk records, and **Claude Code's built-in guard**, which on a machine with managed settings or a Team or Enterprise login routes some events past a user-installed plugin. Only the organization install (`docs/managed.md`) avoids it.
+See `docs/spec.md` section 22 and the README. The main ones: secrets with no known shape, content sent before the tool was installed, Claude Code's own disk records, and **Claude Code's built-in guard**, which on a machine with managed settings or a managed MCP server file, or with a Team or Enterprise login, routes some events past a user-installed plugin (under `on_check_failure: hold` the plugin refuses the request). Only the organization install (`docs/managed.md`) avoids it.
 
 ### Name
 

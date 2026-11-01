@@ -41,6 +41,7 @@ Three more runs write the **machine's managed settings file** while they run, so
 |---|---|
 | `npm run leak-test:managed` | The backup lock installed through managed settings still runs in safe mode. |
 | `npm run leak-test:org` | The organization install (a folder marketplace, `prependPlugins`) leaves no door open. Each run's debug log must show the plugin in tier `prepend`; a log without that makes the run invalid. |
+| `npm run leak-test:guarded-hold` | The same machine with `on_check_failure: hold`: the doors that leak above must be refused, with no request sent. It writes the machine's managed settings file, so it runs in CI. |
 | `npm run leak-test:guarded` | The plugin as a user plugin on a machine with managed settings: the doors Claude Code's built-in guard passes over must leak, and every other door must stay clean. |
 
 ### What the kit does not prove

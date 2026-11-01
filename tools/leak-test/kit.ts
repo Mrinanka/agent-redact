@@ -24,7 +24,7 @@ import { startTrap, type Attempt } from './trap.ts'
 import { ALLOWED_TOOLS, SCENARIOS, type Ctx, type Run, type Scenario } from './scenarios.ts'
 import type { ClaudeCommand } from './claude-bin.ts'
 import { MANAGED_PROOF_NOTICE, mergeHooks, userSettings } from './fixtures/backup-settings.ts'
-import { tierProblem, type TierMode } from './org.ts'
+import { tierProblem, warningProblem, type TierMode } from './org.ts'
 import type { ManagedFile } from './managed-file.ts'
 import { makeFake, makeWitness, plant, randomSource, type Fake, type FakeKind, type PlantForm } from '../test-sets/fakes.ts'
 
@@ -294,6 +294,8 @@ async function runScenario(s: Scenario, opts: KitOptions, trap: { host: string; 
   let unreadable = 0
   let failed = false
   let leftover = false
+  let debugLogs = ''
+  let sentRequest = false
   // With the backup lock as the tool, a stopped prompt shows the lock's own reason.
   const heldRe = opts.backup ? s.heldBackup : s.heldMessage
   let held = heldRe !== undefined && opts.expect === 'clean' && !s.doors.some(d => opts.expectFor?.(s.name, d) === 'leaks')
@@ -321,6 +323,8 @@ async function runScenario(s: Scenario, opts: KitOptions, trap: { host: string; 
           console.error(`${opts.tierProof} run, ${s.name} run ${index}: ${problem}`)
           failed = true
         }
+        if (debugFile !== undefined && fs.existsSync(debugFile)) debugLogs += fs.readFileSync(debugFile, 'utf8')
+        if (mock.records.length > 0) sentRequest = true
       }
       const bad = outcome.timedOut || outcome.exit !== 0
       if (bad) failed = true
@@ -336,6 +340,11 @@ async function runScenario(s: Scenario, opts: KitOptions, trap: { host: string; 
     }
     searchDisk(configDir, needles.filter(n => !n.fakeId.startsWith('witness:')), disk)
     pluginFailures(configDir, needles, s.name)
+    const shown = opts.tierProof ? warningProblem(debugLogs, opts.tierProof, sentRequest) : undefined
+    if (shown) {
+      console.error(`${opts.tierProof} run, ${s.name}: ${shown}`)
+      failed = true
+    }
     if (opts.backup?.where === 'managed' && !managedProofSeen(configDir)) {
       console.error(`managed run, ${s.name}: the backup lock never logged the notice that proves it read the managed settings file's aegisContext key`)
       failed = true
@@ -375,7 +384,7 @@ function pluginFailures(configDir: string, needles: readonly Needle[], scenario:
   if (!fs.existsSync(dir)) return
   for (const name of fs.readdirSync(dir)) {
     for (const line of fs.readFileSync(path.join(dir, name), 'utf8').split('\n')) {
-      if (line.includes('"event":"failure"') || line.includes('"door":"store"')) console.error(`plugin log, ${scenario}: ${scrub(line, needles).slice(0, 300)}`)
+      if (line.includes('"event":"failure"') || line.includes('"door":"store"') || line.includes('"door":"guard"')) console.error(`plugin log, ${scenario}: ${scrub(line, needles).slice(0, 300)}`)
     }
   }
 }

@@ -4,15 +4,20 @@
 //              built-in guard (`sec-default@builtin`) seats itself outermost there and passes some events past
 //              user-tier mods. The kit measures which doors that opens; GUARDED_OPEN lists them, and the run
 //              fails if a listed door is clean or any other door leaks, so the limit in spec §22 stays true.
+//              With --hold, the managed file sets on_check_failure: hold, and the same doors must be refused.
 //   --org      the organization install: a folder marketplace on the machine, the plugin enabled by managed
 //              settings and named in `prependPlugins`, so it runs in the outermost tier. Every door must be clean.
 //
 // Both write the machine's managed settings file, so they run in CI only (D-020). Each run's debug log is the
-// proof that the tool sat in the tier under test; a log without it makes the run invalid, never clean.
+// proof that the tool sat in the tier under test, and that the pass-over warning came where it must and nowhere
+// else; a log without that proof makes the run invalid, never clean.
 
+import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
+import { guardWarning } from '../../src/core/guard-check.ts'
 import { orgPluginSnippet } from '../../src/core/snippet.ts'
+import { releaseFolder, writeArchive } from '../release/pack.ts'
 import { GUARDED_ONLY, SCENARIOS, type Scenario } from './scenarios.ts'
 
 export type TierMode = 'guarded' | 'org'
@@ -31,6 +36,17 @@ export const GUARDED_OPEN: string[] = ['claude-md/claude-md', 'hook-context/hook
 /** The scenarios of the guarded run: all of them, with the compaction door replaced by the one that proves the hold. */
 export const guardedScenarios = (): Scenario[] => [...SCENARIOS.filter(s => s.name !== 'compaction'), ...GUARDED_ONLY]
 
+/** The answer that stands in for a request under hold (`guardHeld`). */
+export const GUARDED_HOLD_MESSAGE = /this request was not sent/
+
+/** The doors that leak under `allow`, now each to be refused: no request leaves, and the person is told why. */
+export const guardedHoldScenarios = (): Scenario[] =>
+  GUARDED_OPEN.map(door => {
+    const s = SCENARIOS.find(x => x.name === door.split('/')[0])
+    if (!s) throw new Error(`no scenario for ${door}`)
+    return { ...s, heldMessage: GUARDED_HOLD_MESSAGE }
+  })
+
 /** The organization install cannot run the resume door: it needs a run made before the tool was installed. */
 export const ORG_SCENARIOS: string[] = [
   'prompt-typed', 'prompt-pasted', 'read-file', 'mention-file', 'bash-output', 'bash-failed', 'bash-large',
@@ -45,13 +61,24 @@ export function orgManagedContent(marketplaceDir: string): ReturnType<typeof org
   return orgPluginSnippet(marketplaceDir)
 }
 
-/** Copies the repo's marketplace manifest and plugin into `dir`: what an administrator puts on each machine. */
+/**
+ * What an administrator puts on each machine: a release archive of the committed tree, unpacked, with the one folder
+ * it holds moved to `dir`. The parent of `dir` must exist.
+ */
 export function buildMarketplaceFolder(dir: string, repo: string): void {
-  fs.mkdirSync(path.join(dir, '.claude-plugin'), { recursive: true })
-  fs.copyFileSync(path.join(repo, '.claude-plugin', 'marketplace.json'), path.join(dir, '.claude-plugin', 'marketplace.json'))
-  // A loaded mod writes its types and a tsconfig.json into its own folder; a copy made after a test run must not take them.
-  const skip = (src: string): boolean => path.basename(src) === 'types' && path.basename(path.dirname(src)) === '.claude-plugin'
-  fs.cpSync(path.join(repo, 'plugin'), path.join(dir, 'plugin'), { recursive: true, filter: src => !skip(src) })
+  const version = (JSON.parse(fs.readFileSync(path.join(repo, 'package.json'), 'utf8')) as { version: string }).version
+  const tag = `v${version}`
+  const work = fs.mkdtempSync(`${dir}-unpack-`)
+  try {
+    const name = `${releaseFolder(tag)}.tar.gz`
+    writeArchive(repo, tag, path.join(work, name))
+    // Relative: GNU tar reads "C:" in an absolute Windows path as a remote host.
+    const t = spawnSync('tar', ['-xzf', name], { cwd: work, encoding: 'utf8' })
+    if (t.status !== 0) throw new Error(`tar failed: ${(t.stderr || t.error?.message || '').trim().slice(0, 200)}`)
+    fs.renameSync(path.join(work, releaseFolder(tag)), dir)
+  } finally {
+    fs.rmSync(work, { recursive: true, force: true })
+  }
 }
 
 const MODULE_LINE = /hooks module (\S+) loaded \([^)]*?\btier (\w+)\)/g
@@ -69,5 +96,17 @@ export function tierProblem(log: string, mode: TierMode): string | undefined {
   if (wrong) return `the tool loaded in tier ${wrong[2]}, not tier ${want}`
   if (mode === 'guarded' && !/sec-default@builtin seated outermost/.test(log)) return 'the debug log never shows the built-in guard seated; the managed settings file may not have been read'
   if (mode === 'org' && !/sec-default@builtin seated by managed prependPlugins/.test(log)) return 'the debug log never shows the built-in guard seated by prependPlugins'
+  return undefined
+}
+
+/**
+ * The pass-over warning against the debug logs of one scenario's runs (`$.ui.log` writes there): the organization
+ * install must never show it, and a guarded scenario that sent a request must. A scenario stopped before any request
+ * proves nothing either way, since the warning comes at the first main step.
+ */
+export function warningProblem(log: string, mode: TierMode, sentRequest: boolean): string | undefined {
+  const shown = log.includes(guardWarning())
+  if (mode === 'org' && shown) return 'the debug log shows the pass-over warning, so a guard passed the organization install over'
+  if (mode === 'guarded' && sentRequest && !shown) return 'a request was sent under the guard and the debug log shows no pass-over warning'
   return undefined
 }

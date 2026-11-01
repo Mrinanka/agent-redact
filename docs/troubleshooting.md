@@ -15,7 +15,7 @@ In all these cases the main lock is off. The backup lock, if installed as manage
 
 ## doctor says "some events are passed over this plugin"
 
-Claude Code's built-in guard routes project instruction files, attachments and compaction summaries past a user-installed plugin on machines with managed settings or a Team or Enterprise login. Nothing the plugin does can change that. Ask your administrator for the organization install ([managed.md](managed.md)).
+Claude Code's built-in guard routes instruction files, hook context, attachments and compaction summaries past a user-installed plugin on machines with managed settings or a managed MCP server file, or with a Team or Enterprise login. Nothing the plugin does can change that. Under `on_check_failure: hold` the plugin refuses every request, and says "this request was not sent". Ask your administrator for the organization install ([managed.md](managed.md)).
 
 ## doctor says the password store is missing or locked
 

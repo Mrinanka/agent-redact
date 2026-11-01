@@ -4,7 +4,18 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { guardDoctorLines, guardFix, guardState, guardWarning } from '../src/core/guard-check.ts'
+import { guardDoctorLines, guardFix, guardHeld, guardState, guardWarning, managedInstall } from '../src/core/guard-check.ts'
+
+test('an install is Managed by our own key or our own plugin, not by any plugin the policy names', () => {
+  assert.equal(managedInstall({}), false)
+  assert.equal(managedInstall({ permissions: { deny: [] } }), false)
+  assert.equal(managedInstall({ enabledPlugins: { 'other@market': true } }), false)
+  assert.equal(managedInstall({ enabledPlugins: { 'aegiscontext@aegiscontext': false } }), false)
+  assert.equal(managedInstall({ enabledPlugins: 'not an object' }), false)
+  assert.equal(managedInstall({ enabledPlugins: { 'aegiscontext@aegiscontext': true } }), true)
+  assert.equal(managedInstall({ enabledPlugins: { 'aegiscontext@company-market': true } }), true)
+  assert.equal(managedInstall({ aegisContext: {} }), true)
+})
 
 test('compose seen means events reach the plugin, whatever else is known', () => {
   assert.equal(guardState({ composeSeen: true, warned: false, tier: 'user', policy: true }), 'reaches')
@@ -19,9 +30,27 @@ test('a main step with no compose seen is a pass-over; before any step it is not
 
 test('the warning names what is not checked and the fix, and holds no value', () => {
   const w = guardWarning()
-  for (const word of ['project instruction', 'attachments', 'compaction', 'organization plugin', 'docs/managed.md']) assert.ok(w.includes(word), word)
+  for (const word of ['instruction files', 'hook context', 'attachments', 'compaction', 'organization plugin', 'docs/managed.md']) assert.ok(w.includes(word), word)
+  assert.ok(!w.includes('project instruction'), 'all loaded instruction files, not only the project\'s')
   assert.ok(!w.includes('a check failed'), 'it is not a failed check')
   assert.ok(w.length < 400, 'short enough for a toast')
+})
+
+test('the warning names every sign of the guard, each one enough alone', () => {
+  const w = guardWarning()
+  for (const sign of ['managed settings', 'managed MCP', 'Team or Enterprise']) assert.ok(w.includes(sign), sign)
+  assert.ok(!/and with/.test(w), 'any one of them seats the guard')
+})
+
+test('a held request says why, how to fix it, and that it was not sent', () => {
+  const h = guardHeld()
+  for (const word of ['not sent', 'hold', 'instruction files', 'hook context', 'organization plugin', 'docs/managed.md', 'on_check_failure']) assert.ok(h.includes(word), word)
+})
+
+test('the doctor line for a pass-over names the same doors as the warning', () => {
+  const lines = guardDoctorLines({ composeSeen: false, warned: true, tier: 'user', policy: true }).join('\n')
+  for (const word of ['instruction files', 'hook context', 'attachments', 'compaction']) assert.ok(lines.includes(word), word)
+  assert.ok(!lines.includes('project instruction'))
 })
 
 test('doctor lines: tier, then the guard, and a fix only for a pass-over', () => {

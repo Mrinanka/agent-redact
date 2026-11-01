@@ -5,21 +5,30 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
-import { installCommands } from '../tools/release/readme-install.ts'
+import { headProblem, installCommands } from '../tools/release/readme-install.ts'
 
 const readme = fs.readFileSync(path.join(import.meta.dirname, '..', 'README.md'), 'utf8')
 
-test('the README install line becomes a marketplace add and an install, by the names the marketplace uses', () => {
-  const cmds = installCommands(readme)
-  assert.deepEqual(cmds, [
-    ['plugin', 'marketplace', 'add', 'Mrinanka/aegiscontext'],
-    ['plugin', 'install', 'aegiscontext@aegiscontext'],
-  ])
+test('the README install line becomes the same line in the terminal form', () => {
+  assert.deepEqual(installCommands(readme), {
+    name: 'aegiscontext',
+    source: 'Mrinanka/aegiscontext',
+    args: ['plugin', 'install', 'aegiscontext', '--marketplace', 'Mrinanka/aegiscontext'],
+  })
 })
 
-test('the marketplace name used for the install is the one in .claude-plugin/marketplace.json', () => {
-  const m = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', '.claude-plugin', 'marketplace.json'), 'utf8')) as { name: string }
-  assert.equal(installCommands(readme)[1]?.[2], `aegiscontext@${m.name}`)
+test('the plugin name used for the install is the one in .claude-plugin/marketplace.json', () => {
+  const m = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', '.claude-plugin', 'marketplace.json'), 'utf8')) as { plugins: { name: string }[] }
+  assert.equal(installCommands(readme).name, m.plugins[0]?.name)
+})
+
+test('the install proves the checked-out commit only when it is what GitHub hands a newcomer', () => {
+  const sha = 'a'.repeat(40)
+  const other = 'b'.repeat(40)
+  assert.equal(headProblem(sha, `${sha}\tHEAD\n`), undefined)
+  assert.match(headProblem(sha, `${other}\tHEAD\n`) ?? '', /default branch/)
+  assert.match(headProblem(sha, '') ?? '', /could not read/)
+  assert.match(headProblem(sha, 'not a line\n') ?? '', /could not read/)
 })
 
 test('a README with no install line, or two different ones, is an error rather than a guess', () => {

@@ -480,6 +480,7 @@ const said = (w: World): boolean => w.ui.some(l => l.includes('a check failed'))
 const logged = (w: World, action: 'held' | 'allowed'): boolean => failures(w).some(l => l.includes(`"action":"${action}"`))
 
 const STEP = { turnId: 't', index: 0, messages: [], system: [], tools: [], model: 'm' } as never
+const COMPOSE = { sections: [], model: 'm' } as never
 function stepBeneath(on: On, fail = false): { count: number } {
   const sent = { count: 0 }
   on('turn.step', async function* () {
@@ -544,6 +545,9 @@ for (const mode of ['allow', 'hold'] as const) {
   test(`turn.step failing under ${mode}: ${held ? 'no request is sent' : 'the request goes'}, with a warning and a log line`, async ($, on) => {
     const sent = stepBeneath(on)
     const w = world(on, { settings })
+    // No guard on this machine: under hold, a step with no compose is refused before it gets as far as this failure.
+    on('prompt.compose', () => ({ sections: [] }))
+    await $.prompt.compose(COMPOSE)
     w.clock.broken = true
     await drain($.turn.step(STEP))
     expect(sent.count).toBe(held ? 0 : 1)
@@ -569,6 +573,9 @@ test('turn.step: clean history lets the request through once', async ($, on) => 
 test('turn.step: a request that fails beneath is not sent again, and is not called a failed check', async ($, on) => {
   const sent = stepBeneath(on, true)
   const w = world(on, { settings: { on_check_failure: 'hold' } })
+  // No guard on this machine: under hold, a step with no compose is refused before it is sent.
+  on('prompt.compose', () => ({ sections: [] }))
+  await $.prompt.compose(COMPOSE)
   await drain($.turn.step(STEP)).catch(() => undefined)
   expect(sent.count).toBe(1)
   expect(said(w)).toBe(false)
@@ -1186,7 +1193,6 @@ test('doctor shows the marker and how long ago the main lock last beat', async (
 // fix that, so a main turn.step that comes with no prompt.compose seen warns once and doctor says so.
 
 const guardLines = (w: World): string[] => w.ui.filter(l => l.includes('organization plugin'))
-const COMPOSE = { sections: [], model: 'm' } as never
 
 test('guard: a main turn.step with no prompt.compose seen warns, with no value in it', async ($, on) => {
   stepBeneath(on)
@@ -1237,6 +1243,122 @@ test('guard: doctor reports the pass-over after the warning, and a fix', async (
   expect(out).toMatch(/Built-in guard: .*passed over/i)
   expect(out).toContain('organization plugin')
   noFake(w)
+})
+
+const guardLogged = (w: World): string[] => w.writes.flatMap(x => x.text.split('\n')).filter(l => l.includes('"door":"guard"'))
+
+test('guard: the pass-over reaches the log file as well as the screen, because a -p run shows no warning', async ($, on) => {
+  const sent = stepBeneath(on)
+  const w = world(on)
+  await drain($.turn.step(STEP))
+  expect(guardLogged(w).length).toBeGreaterThanOrEqual(1)
+  expect(guardLogged(w)[0]).toContain('"action":"allowed"')
+  expect(sent.count).toBe(1)
+  noFake(w)
+})
+
+test('guard: no log line when prompt.compose ran', async ($, on) => {
+  stepBeneath(on)
+  const w = world(on)
+  on('prompt.compose', () => ({ sections: [] }))
+  await $.prompt.compose(COMPOSE)
+  await drain($.turn.step(STEP))
+  expect(guardLogged(w)).toEqual([])
+})
+
+test('guard: under hold a pass-over refuses the request, every time, and says so once', async ($, on) => {
+  const sent = stepBeneath(on)
+  const w = world(on, { settings: { on_check_failure: 'hold' } })
+  await drain($.turn.step(STEP))
+  await drain($.turn.step(STEP))
+  expect(sent.count).toBe(0)
+  expect(guardLines(w).length).toBe(2) // the log line and the toast, once
+  expect(guardLogged(w)[0]).toContain('"action":"held"')
+  noFake(w)
+})
+
+/** What the person sees: the engine shows what a step streams, never what it returns (a bare return is "Execution error"). */
+async function shown(stream: AsyncIterable<unknown>): Promise<{ text: string; stops: number }> {
+  let text = ''
+  let stops = 0
+  for await (const c of stream as AsyncIterable<{ kind: string; text?: string }>) {
+    if (c.kind === 'text') text += c.text ?? ''
+    if (c.kind === 'stop') stops++
+  }
+  return { text, stops }
+}
+
+test('guard: a refused request streams its reason and ends, so the person reads it', async ($, on) => {
+  stepBeneath(on)
+  world(on, { settings: { on_check_failure: 'hold' } })
+  const out = await shown($.turn.step(STEP))
+  expect(out.text).toContain('this request was not sent')
+  expect(out.text).toContain('docs/managed.md')
+  expect(out.stops).toBe(1)
+})
+
+test('turn.step: a request held for a resumed history streams its reason and ends', async ($, on) => {
+  stepBeneath(on)
+  world(on, { messages: old })
+  on('prompt.compose', () => ({ sections: [] }))
+  await $.prompt.compose(COMPOSE)
+  const out = await shown($.turn.step(STEP))
+  expect(out.text).toContain('history contains')
+  expect(out.stops).toBe(1)
+})
+
+test('turn.step: a request held by a failed check streams its reason and ends', async ($, on) => {
+  stepBeneath(on)
+  const w = world(on, { settings: { on_check_failure: 'hold' } })
+  on('prompt.compose', () => ({ sections: [] }))
+  await $.prompt.compose(COMPOSE)
+  w.clock.broken = true
+  const out = await shown($.turn.step(STEP))
+  expect(out.text).toContain('the request was not sent')
+  expect(out.stops).toBe(1)
+})
+
+test('guard: under hold a request goes once prompt.compose has run', async ($, on) => {
+  const sent = stepBeneath(on)
+  world(on, { settings: { on_check_failure: 'hold' } })
+  on('prompt.compose', () => ({ sections: [] }))
+  await $.prompt.compose(COMPOSE)
+  await drain($.turn.step(STEP))
+  expect(sent.count).toBe(1)
+})
+
+test('guard: under hold a subagent step is left alone, because the main step before it was the one to refuse', async ($, on) => {
+  const sent = stepBeneath(on)
+  world(on, { settings: { on_check_failure: 'hold' } })
+  await drain($.turn.step({ ...(STEP as object), agentId: 'agent-1' } as never))
+  expect(sent.count).toBe(1)
+})
+
+test('guard: observe holds nothing, even under hold', async ($, on) => {
+  const sent = stepBeneath(on)
+  const w = world(on, { settings: { mode: 'observe', on_check_failure: 'hold' } })
+  await drain($.turn.step(STEP))
+  expect(sent.count).toBe(1)
+  expect(guardLogged(w)[0]).toContain('"action":"allowed"')
+})
+
+test('guard: a worker restart under hold still refuses, though the flag says it has warned', async ($, on) => {
+  const sent = stepBeneath(on)
+  const w = world(on, { settings: { on_check_failure: 'hold' } })
+  on('state.get', (_$, e, next) => (e.key === 'guardWarned' ? { value: { value: true, version: 1 } } : next(e)))
+  await drain($.turn.step(STEP))
+  expect(sent.count).toBe(0)
+  expect(guardLines(w)).toEqual([])
+})
+
+test('doctor: a policy naming another plugin is not a Managed install', async ($, on) => {
+  world(on, { policy: { enabledPlugins: { 'other@market': true } } })
+  expect(await redact($, 'doctor')).toContain('Install: Personal mode.')
+})
+
+test('doctor: a policy enabling this plugin is a Managed install', async ($, on) => {
+  world(on, { policy: { enabledPlugins: { 'aegiscontext@aegiscontext': true } } })
+  expect(await redact($, 'doctor')).toContain('Install: Managed settings are present.')
 })
 
 test('guard: doctor says the events reach the plugin once prompt.compose has run', async ($, on) => {

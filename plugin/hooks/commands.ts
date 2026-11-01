@@ -8,6 +8,7 @@ import { addToList, osOf, storeReport } from './backends.ts'
 import { createChecker } from './lib/checker/index.ts'
 import { now } from './lib/core/decoder.ts'
 import { parseEnv, startsTicked } from './lib/core/envfile.ts'
+import { managedInstall } from './lib/core/guard-check.ts'
 import { reportText, runSelfCheck } from './lib/core/selfcheck.ts'
 import { isTested } from './lib/core/versions.ts'
 import { PLUGIN_VERSION } from './marker.ts'
@@ -246,7 +247,7 @@ export async function doctor($: EngineInterface): Promise<string> {
   if (state?.installed && !state.current) fix.push('The backup lock copy is out of date; it refreshes at the next session start, or run /redact backup now.')
   return [
     `Claude Code: ${version} (${isTested(version) ? 'tested' : 'not on the tested list'}).`,
-    `Install: ${'aegisContext' in policy || 'enabledPlugins' in policy ? 'Managed settings are present' : 'Personal mode'}.`,
+    `Install: ${managedInstall(policy) ? 'Managed settings are present' : 'Personal mode'}.`,
     ...guard.lines,
     'Main lock hooks: running (this answer came from a hook).',
     `Password store: ${store ? `${store.status}, ${store.count} saved` : 'could not be checked'}.`,

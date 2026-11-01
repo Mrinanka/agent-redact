@@ -4,7 +4,7 @@
 //     [--claude <path>] [--only <scenario>]... [--report <file>]
 //     [--require-pinned] [--scratch <dir>] [--keep]
 //     [--backup user|managed [--outside] [--safe-mode] [--allow-managed-file]]
-//     [--org | --guarded] --allow-managed-file
+//     [--org | --guarded [--hold]] --allow-managed-file
 //
 // Exit codes: 0 pass, 1 leak (or a blind baseline), 2 invalid run or bad usage.
 
@@ -16,7 +16,7 @@ import { pinnedVersion, resolveClaude } from './claude-bin.ts'
 import { exitCodeFor, KitError, runKit, type KitOptions } from './kit.ts'
 import { formatReport } from './report.ts'
 import { managedFile, type ManagedFile } from './managed-file.ts'
-import { GUARDED_OPEN, ORG_SCENARIOS, buildMarketplaceFolder, guardedScenarios, orgManagedContent } from './org.ts'
+import { GUARDED_OPEN, ORG_SCENARIOS, buildMarketplaceFolder, guardedHoldScenarios, guardedScenarios, orgManagedContent } from './org.ts'
 import { managedFileContent } from './fixtures/backup-settings.ts'
 import { BACKUP_INSIDE, BACKUP_ONLY, BACKUP_OUTSIDE, SCENARIOS, STORE_SCENARIOS } from './scenarios.ts'
 
@@ -41,6 +41,7 @@ const USAGE = `usage: node tools/leak-test/run.ts [options]
   --org               the organization install: a folder marketplace, the plugin in prependPlugins (every door must be clean)
   --guarded           the plugin as a user plugin on a machine with managed settings: the built-in guard passes some doors over,
                       and those must leak while every other door stays clean
+  --hold              with --guarded: the managed file sets on_check_failure: hold, and those doors must be refused instead
 scenarios: ${SCENARIOS.map(s => s.name).join(', ')}`
 
 function usage(message: string): never {
@@ -95,6 +96,7 @@ function options(): { kit: KitOptions; report?: string } {
         'allow-managed-file': { type: 'boolean' },
         org: { type: 'boolean' },
         guarded: { type: 'boolean' },
+        hold: { type: 'boolean' },
       },
     }).values
   } catch (e) {
@@ -112,6 +114,7 @@ function options(): { kit: KitOptions; report?: string } {
   if (backup === 'user' && v['allow-managed-file']) usage('--allow-managed-file goes with --backup managed')
   const tier = v.org ? 'org' : v.guarded ? 'guarded' : undefined
   if (v.org && v.guarded) usage('--org and --guarded are two different runs: pass one')
+  if (v.hold && !v.guarded) usage('--hold goes with --guarded')
   if (tier !== undefined) {
     if (backup !== undefined || v.outside || v['safe-mode']) usage('--org and --guarded do not combine with the backup lock options')
     if (!v['allow-managed-file']) usage(`--${tier} writes the managed settings file of this machine while it runs; pass --allow-managed-file to allow it`)
@@ -119,7 +122,7 @@ function options(): { kit: KitOptions; report?: string } {
   }
   const expect = v.outside ? 'leaks' : v.expect
   const names = v.outside ? BACKUP_OUTSIDE : BACKUP_INSIDE
-  const all = tier === 'org' ? SCENARIOS.filter(s => ORG_SCENARIOS.includes(s.name)) : tier === 'guarded' ? guardedScenarios() : backup === undefined ? (withStore ? [...SCENARIOS, ...STORE_SCENARIOS] : SCENARIOS) : [...SCENARIOS, ...BACKUP_ONLY].filter(s => names.includes(s.name))
+  const all = tier === 'org' ? SCENARIOS.filter(s => ORG_SCENARIOS.includes(s.name)) : tier === 'guarded' ? (v.hold ? guardedHoldScenarios() : guardedScenarios()) : backup === undefined ? (withStore ? [...SCENARIOS, ...STORE_SCENARIOS] : SCENARIOS) : [...SCENARIOS, ...BACKUP_ONLY].filter(s => names.includes(s.name))
   const main = path.join(REPO, 'plugin', 'backup', 'backup', 'main.js')
   if (backup !== undefined && !fs.existsSync(main)) usage('plugin/backup is not built: run npm run plugin:build')
   const unknown = (v.only ?? []).filter(n => !all.some(s => s.name === n))
@@ -139,7 +142,8 @@ function options(): { kit: KitOptions; report?: string } {
       ...(backup === undefined ? {} : { backup: { main, where: backup } }),
       ...(v['safe-mode'] ? { safeMode: true } : {}),
       ...(backup === 'managed' ? { managedFile: managedFile(managedFileContent(main)) } : {}),
-      ...(tier === 'guarded' ? { managedFile: managedFile({ aegisContext: {} }), tierProof: 'guarded' as const, expectFor: (scenario: string, door: string) => (GUARDED_OPEN.includes(`${scenario}/${door}`) ? 'leaks' as const : 'clean' as const) } : {}),
+      ...(tier === 'guarded' ? { managedFile: managedFile({ aegisContext: v.hold ? { on_check_failure: 'hold' } : {} }), tierProof: 'guarded' as const } : {}),
+      ...(tier === 'guarded' && !v.hold ? { expectFor: (scenario: string, door: string) => (GUARDED_OPEN.includes(`${scenario}/${door}`) ? 'leaks' as const : 'clean' as const) } : {}),
       ...(tier === 'org' ? { managedFile: orgInstall(), tierProof: 'org' as const, extraEnv: { CLAUDE_CODE_SYNC_PLUGIN_INSTALL: '1' } } : {}),
       scenarios: v.only ? all.filter(s => v.only?.includes(s.name)) : all,
       pinned: pinnedVersion(),

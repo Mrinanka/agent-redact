@@ -24,7 +24,7 @@ Restart the session, then check it is running:
 
 It should say the main lock is running. If `/redact` does not exist, the hooks are not running; run `/aegiscontext:doctor` instead, which works even then and says why. Details: [docs/personal.md](docs/personal.md). To pin a version, add `@<tag>` to the repository name.
 
-Requires Claude Code 2.1.275 or later. Tested versions: [docs/tested-versions.md](docs/tested-versions.md).
+Requires Claude Code 2.1.309 or later. Tested versions: [docs/tested-versions.md](docs/tested-versions.md).
 
 ### Add the backup lock (recommended)
 
@@ -63,7 +63,7 @@ You do not have to take our word for it. The repo ships a **leak test kit**: a l
 - **Secrets with no shape.** A secret with no known format, no label, never registered and never seen before cannot be found by any tool. Registering your secrets (`/redact add`, `/redact learn`) and "once caught, always caught" shrink the gap.
 - **What was already sent.** Anything sent before the plugin was installed, or before a secret was registered, cannot be taken back.
 - **Claude Code's own disk records** (file backups, saved large outputs, the session transcript) stay as Claude Code writes them.
-- **Claude Code's built-in guard.** On a machine with managed settings, and with a Team or Enterprise login, Claude Code routes some events (project instruction files, attachments, compaction) past a user-installed plugin. AegisContext warns once per session and in `/redact doctor`. Only the organization install fixes it.
+- **Claude Code's built-in guard.** On a machine with managed settings or a managed MCP server file, or with a Team or Enterprise login (any one is enough), Claude Code routes some events (instruction files, hook context, attachments, compaction) past a user-installed plugin. AegisContext warns once per session and in `/redact doctor`, and under `on_check_failure: hold` it refuses to send the request. Only the organization install fixes it.
 - **It can be switched off in Personal mode.** `--safe-mode`, `--bare`, a project's `disableAllHooks`, and an organization's `allowManagedHooksOnly` turn the plugin off. `/aegiscontext:doctor` says so.
 - **Images and documents** are passed or dropped, never read.
 - **A person who splits or scrambles a secret on purpose** gets past it. It stops accidents.

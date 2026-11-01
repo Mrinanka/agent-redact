@@ -5,7 +5,7 @@
 // The bodies are in handlers.ts. The engine lets `$` pass only to functions declared or imported at
 // the top of a file, so the hooks call those and keep `next` for themselves.
 
-import type { Register } from 'claude-code'
+import type { Register, TurnStepChunk, TurnStepResult } from 'claude-code'
 import { cleanAppend, cleanAttachment, cleanContext, cleanSubmit, failedAppend, failedAttachment, failedCompose, failedContext, failedGate, failedLifecycle, failedSubmit, PLACEHOLDER_NOTE, shutDown, startUp, stillRunning } from './handlers.ts'
 import { NOTE_ID } from './lib/core/note.ts'
 import { DOCTOR, doctor, isOwnCommandCall, isPerson, redactCommand } from './commands.ts'
@@ -16,6 +16,13 @@ import { afterTool, askReason, beforeTool } from './tools.ts'
 import { drawBanner } from './banner.tsx'
 import { drawAdd, drawLearn } from './panes.tsx'
 import { checkGuard, markComposeSeen, noteOrigin } from './guard.ts'
+
+/** An answer in place of a request. The engine shows and records what a step streams, never what it returns. */
+function* heldAnswer(e: { turnId: string; index: number }, answer: string): Generator<TurnStepChunk, TurnStepResult> {
+  yield { kind: 'text', index: 0, text: answer }
+  yield { kind: 'stop', stopReason: 'end_turn', usage: null }
+  return { turnId: e.turnId, index: e.index, answer, toolUses: [], stopReason: 'end_turn', usage: null }
+}
 
 export const register: Register = on => {
   // All hiding: every row the conversation keeps passes through here before it is stored.
@@ -81,17 +88,16 @@ export const register: Register = on => {
 
   // The backstop for a turn with no prompt: the request is held and never sent.
   on('turn.step', async function* ($, e, next) {
-    await checkGuard($, e.agentId)
-    const reason = await resumeBlock($)
+    const reason = (await checkGuard($, e.agentId)) ?? (await resumeBlock($))
     if (!reason) return yield* next(e)
-    return { turnId: e.turnId, index: e.index, answer: reason, toolUses: [], stopReason: 'end_turn', usage: null }
+    return yield* heldAnswer(e, reason)
   }).catch(async function* ($, e, next) {
     // The request went, and this failure is its own. A stream's next would send it again, so pass the failure on.
     if (next.called) throw new Error(next.error.message ?? 'the request failed')
     const held = (await failureMode($)) === 'hold'
     await failedGate($, 'turn', 'a request to the model', next.error.kind, held)
     if (!held) return yield* next(e)
-    return { turnId: e.turnId, index: e.index, answer: 'aegiscontext could not check this session, so the request was not sent.', toolUses: [], stopReason: 'end_turn', usage: null }
+    return yield* heldAnswer(e, 'aegiscontext could not check this session, so the request was not sent.')
   })
 
   on('tool.call', async ($, e, next) => {

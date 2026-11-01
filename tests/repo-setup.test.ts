@@ -151,4 +151,11 @@ describe('CI (plan.md Ground rules, spec §4)', () => {
       assert.match(yaml, /^\s+cancel-in-progress:\s*true\s*$/m, `${f} does not cancel superseded runs`);
     }
   });
+
+  test('a push and its pull request share one CI run; a fork with the same branch name does not', () => {
+    const group = /^\s+group:\s*(.+)$/m.exec(readText('.github', 'workflows', 'ci.yml'))?.[1] ?? '';
+    assert.ok(group.includes('github.head_ref || github.ref_name'), 'a PR and a push must name the branch the same way');
+    assert.ok(group.includes('github.event.pull_request.head.repo.full_name || github.repository'), 'a fork must not share a group with this repo');
+    assert.ok(!group.includes('pull_request.number'), 'a PR number never matches a push, so nothing is cancelled');
+  });
 });
