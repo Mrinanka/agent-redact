@@ -54,5 +54,6 @@ test('a saved list in a really locked store warns and loads nothing, and loads a
     assert.equal(run('security', 'unlock-keychain', '-p', pass, keychain).status, 0)
     assert.deepEqual((await loadList(b)).entries, list)
   }
-  await saveList(b, [])
+  // Linux: the keyring stays locked and ends with its session.
+  if (process.platform === 'darwin') await saveList(b, [])
 })
