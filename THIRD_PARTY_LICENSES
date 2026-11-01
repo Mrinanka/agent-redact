@@ -22,6 +22,9 @@ Where it is used:
     `npm run rules:build` (patterns converted and, for a few rules, rewritten).
   - plugin/hooks/lib/checker/rules.generated.ts: a byte-for-byte copy of the
     file above, shipped in the plugin. This file ships beside it.
+  - plugin/backup/checker/rules.generated.js: the same rules compiled to JavaScript
+    by `npm run plugin:build`, shipped in the plugin for the backup lock. This file
+    ships beside it, and in the folder `/redact backup` copies.
   - tools/test-sets/whole-keys.ts and the key shapes in tests/fakes.test.ts:
     written by hand after reading the upstream patterns; some match them exactly.
 

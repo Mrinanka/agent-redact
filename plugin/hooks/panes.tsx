@@ -62,16 +62,24 @@ async function submitAdd($: EngineInterface, value: string): Promise<void> {
 async function saveLearned($: EngineInterface): Promise<void> {
   const rows = (await $.state.get({ plugin: 'secret-shield', key: 'learnRows' })).value ?? []
   const added = await today($)
-  const entries = rows.filter(r => r.ticked).flatMap(r => {
+  const ticked = rows.filter(r => r.ticked).flatMap(r => {
     const value = learnValues.get(r.id)
     return value === undefined ? [] : [{ value, label: r.key, added }]
   })
+  // The same rule as /redact add: a value under 6 characters would hide every "true" or "3000" it meets.
+  const entries = ticked.filter(e => validRegistered(e.value) === undefined)
+  const skipped = ticked.length - entries.length
   try {
     const saved = await addToList($, entries)
     learnValues.clear()
     registeredChanged()
     await $.ui.close({ id: LEARN_PANE })
-    $.ui.log(`secret-shield: saved ${saved} of ${rows.length} values.`)
+    const already = entries.length - saved
+    $.ui.log(
+      `secret-shield: saved ${saved} of ${rows.length} values.` +
+        (skipped > 0 ? ` ${skipped} skipped: a value must be 6 to 8,192 characters.` : '') +
+        (already > 0 ? ` ${already} already saved.` : ''),
+    )
   } catch (error) {
     await $.state.set({ plugin: 'secret-shield', key: 'learnNote' }, { text: storeWords(error), isError: true })
   }

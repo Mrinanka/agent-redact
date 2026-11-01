@@ -122,6 +122,21 @@ switch (mode) {
     await post(collected)
     break
   }
+  case 'held-backup':
+    // What `claude -p` prints when the backup lock stops a prompt: nothing is sent.
+    process.stdout.write('UserPromptSubmit operation blocked by hook:\nsecret-shield (backup lock): your message holds a secret (X #y), so it was not sent.\n')
+    break
+  case 'save-args':
+    fs.writeFileSync(process.env.STAND_IN_ENV_FILE ?? path.join(process.cwd(), 'args.json'), JSON.stringify(args))
+    await post(collected)
+    break
+  case 'write-proof': {
+    const dir = path.join(process.env.CLAUDE_CONFIG_DIR, 'secret-shield', 'log')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, '2026-11-01-s.backup.jsonl'), JSON.stringify({ t: 1, event: 'notice', door: 'settings', detail: process.env.STAND_IN_PROOF }) + '\n')
+    await post(hideAll(collected))
+    break
+  }
   default:
     process.exit(64)
 }

@@ -3,6 +3,7 @@
 // comes in on the command line: `add` and `learn` take theirs in a pane, where no row is made.
 
 import type { EngineInterface } from 'claude-code'
+import { backupHooksIn, backupState, installBackup, snippetText } from './backup-copy.ts'
 import { addToList, osOf, storeReport } from './backends.ts'
 import { createChecker } from './lib/checker/index.ts'
 import { now } from './lib/core/decoder.ts'
@@ -11,7 +12,7 @@ import { reportText, runSelfCheck } from './lib/core/selfcheck.ts'
 import { isTested } from './lib/core/versions.ts'
 import { PLUGIN_VERSION } from './marker.ts'
 import { writeLog } from './log-file.ts'
-import { dataDir, joinPath } from './paths.ts'
+import { configDir, dataDir, joinPath } from './paths.ts'
 import { liftResume } from './resume.ts'
 import { ready, registeredChanged } from './runtime.ts'
 import { addAllowedTag, hiddenSummary, placedFiles, setGuardPass } from './state.ts'
@@ -23,7 +24,7 @@ export const DOCTOR = 'secret-shield:doctor'
 export const ADD_PANE = 'secret-shield-add'
 export const LEARN_PANE = 'secret-shield-learn'
 
-const USAGE = 'Use: /redact, /redact add [--label name], /redact learn, /redact allow [tag] [--always], /redact self-check [--report], /redact doctor.'
+const USAGE = 'Use: /redact, /redact add [--label name], /redact learn, /redact allow [tag] [--always], /redact backup [managed], /redact self-check [--report], /redact doctor.'
 const MAX_DEPTH = 3
 const MAX_FILE = 1024 * 1024
 const SKIP = new Set(['.git', 'node_modules'])
@@ -44,13 +45,79 @@ async function status($: EngineInterface): Promise<string> {
   const hidden = await hiddenSummary($)
   const placed = await placedFiles($)
   const lines = [
-    `secret-shield ${PLUGIN_VERSION}: main lock running; backup lock not available yet.`,
+    `secret-shield ${PLUGIN_VERSION}: main lock running. ${await backupLine($)}`,
     `Mode: ${rt.settings.mode === 'observe' ? 'OBSERVE, secrets are NOT being hidden' : 'enforce'}.`,
     `Hidden this session: ${hidden.length}.`,
     ...hidden.slice(-20).map(h => `  ${h.label}${h.hint ? ` ...${h.hint}` : ''} in ${h.where} #${h.tag}`),
   ]
   if (placed.length > 0) lines.push('Files that got a placeholder:', ...placed.slice(-20).map(p => `  ${p.file}, line ${p.line}`))
   return lines.join('\n')
+}
+
+/** One line for the status: is the backup lock set up, and is its copy current? */
+async function backupLine($: EngineInterface): Promise<string> {
+  try {
+    const [state, user, policy] = [await backupState($), await $.settings.read({ source: 'user' }).catch(() => ({})), await $.settings.read({ source: 'policy' }).catch(() => ({}))]
+    const hooks = backupHooksIn(user).found || backupHooksIn(policy).found
+    if (!state.installed && !hooks) return 'Backup lock: not set up (run /redact backup).'
+    if (!hooks) return 'Backup lock: copied, but no settings run it yet (run /redact backup to see what to add).'
+    return `Backup lock: set up${state.installed ? (state.current ? ', copy current' : ', copy out of date; it refreshes at the next session start') : ''}. It acts only when this lock is not running.`
+  } catch {
+    return 'Backup lock: could not be checked.'
+  }
+}
+
+async function backup($: EngineInterface, rest: string): Promise<string> {
+  const managed = rest.trim() === 'managed'
+  if (rest.trim() !== '' && !managed) return 'Use: /redact backup, or /redact backup managed.'
+  let copied
+  try {
+    copied = await installBackup($)
+  } catch {
+    return 'The backup lock could not be copied: this plugin carries no build of it, or the copy could not be written.'
+  }
+  const node = await nodeVersion($)
+  const target = managed ? 'the managed settings file (an administrator does this)' : `your user settings, ${joinPath(await configDir($), 'settings.json')}`
+  return [
+    `The backup lock is copied to ${await stableDirText($)} (${copied.files} files).`,
+    'It runs only when the main lock is not alive, and then blocks prompts that hold secrets, stops tool calls that carry them and cleans tool output.',
+    node ? `Node ${node} found.` : 'Node was NOT found on the PATH. The backup lock cannot run without it.',
+    `To switch it on, add this to ${target}. If it already has a "hooks" key, merge the three events in:`,
+    await snippetText($, managed),
+    managed ? 'In managed settings, add "--policy <file>" arguments only if your settings reach machines by MDM or from the server, and point it at a copy of that policy.' : 'This stops nothing if Node is missing or the hook fails to start. The managed snippet adds onFailure "block" for that.',
+    'Check it with /redact doctor.',
+  ].join('\n')
+}
+
+/**
+ * Where an exec-form hook would find `node`: the first PATH folder that holds it. Looked up here, not by
+ * running `node`, because `$.process.run` refuses a PATH with an empty entry that a hook starts fine with.
+ */
+async function findNode($: EngineInterface): Promise<string | undefined> {
+  const windows = (await osOf($)) === 'windows'
+  const path = (await $.env.get('PATH')) ?? (await $.env.get('Path')) ?? ''
+  for (const dir of path.split(windows ? ';' : ':')) {
+    if (dir === '' || dir === '.') continue
+    const exe = joinPath(dir, windows ? 'node.exe' : 'node')
+    if (await $.fs.exists(exe).catch(() => false)) return exe
+  }
+  return undefined
+}
+
+async function nodeVersion($: EngineInterface): Promise<string | undefined> {
+  try {
+    const exe = await findNode($)
+    if (exe === undefined) return undefined
+    const r = await $.process.run([exe, '--version'], { timeoutMs: 5000 })
+    const v = r.stdout.trim().replace(/^v/, '')
+    return r.exitCode === 0 && /^\d+\.\d+/.test(v) ? v : undefined
+  } catch {
+    return undefined
+  }
+}
+
+async function stableDirText($: EngineInterface): Promise<string> {
+  return joinPath(await dataDir($), 'backup')
 }
 
 async function add($: EngineInterface, rest: string): Promise<string> {
@@ -146,20 +213,43 @@ export async function doctor($: EngineInterface): Promise<string> {
   const user = JSON.stringify(await $.settings.read({ source: 'user' }).catch(() => ({})))
   const store = await storeReport($).catch(() => undefined)
   const session = await $.session.id()
-  const marker = await $.fs.exists(joinPath(await dataDir($), 'markers', `${session}.json`)).catch(() => false)
+  const markerFile = joinPath(await dataDir($), 'markers', `${session}.json`)
+  const marker = await $.fs.exists(markerFile).catch(() => false)
+  let beatAge = ''
+  if (marker) {
+    try {
+      const beat = (JSON.parse(String(await $.fs.read(markerFile))) as { beat?: unknown }).beat
+      if (typeof beat === 'number') beatAge = `, last beat ${Math.max(0, Math.round((await $.clock.now() - beat) / 1000))} s ago`
+    } catch {
+      beatAge = ', unreadable'
+    }
+  }
+  const mine = backupHooksIn(JSON.parse(user))
+  const managedHooks = backupHooksIn(policy)
+  const state = await backupState($).catch(() => undefined)
+  const node = await nodeVersion($)
+  const nodeMajor = node ? Number(node.split('.')[0]) : 0
+  const hooksSet = mine.found || managedHooks.found
   const fix: string[] = []
   if (!isTested(version)) fix.push('Run /redact self-check on this Claude Code version.')
   if (store?.status === 'missing') fix.push('Install a password store (Linux: libsecret-tools and a keyring) to keep saved secrets.')
   if (store?.status === 'locked') fix.push('Unlock your password store; saved secrets are not being hidden until then.')
   if (rt.problems.length > 0) fix.push('Fix the settings problems below.')
+  if (!hooksSet) fix.push('The backup lock is not set up: run /redact backup. Without it, a crash or a policy that blocks plugin hooks leaves nothing checking.')
+  if (hooksSet && !node) fix.push('Node is not on the PATH, so the backup lock cannot run.')
+  if (hooksSet && node && nodeMajor < 20) fix.push('Node is older than 20; the backup lock was tested on Node 24.')
+  if (hooksSet && !(mine.found ? mine.blocksOnFailure : managedHooks.blocksOnFailure)) fix.push('The backup hooks do not set onFailure "block": if Node is missing or a hook fails to start, the call goes through. The managed snippet sets it.')
+  if (hooksSet && state?.hasSource && !state.installed) fix.push('The backup hooks are set, but their copy is missing here: run /redact backup.')
+  if (state?.installed && !state.current) fix.push('The backup lock copy is out of date; it refreshes at the next session start, or run /redact backup now.')
   return [
     `Claude Code: ${version} (${isTested(version) ? 'tested' : 'not on the tested list'}).`,
     `Install: ${'secretShield' in policy || 'enabledPlugins' in policy ? 'Managed settings are present' : 'Personal mode'}.`,
     'Plugin tier: not visible to the plugin; in Personal mode it is user.',
     'Main lock hooks: running (this answer came from a hook).',
     `Password store: ${store ? `${store.status}, ${store.count} saved` : 'could not be checked'}.`,
-    `Backup lock: ${user.includes('secret-shield') && user.includes('hooks') ? 'hooks found in user settings' : 'not installed'}.`,
-    `Marker: ${marker ? 'present' : 'missing'}.`,
+    `Backup lock: ${mine.found ? 'hooks found in user settings' : managedHooks.found ? 'hooks found in managed settings' : 'not installed'}${state?.installed ? `; copy ${state.copyVersion ?? '?'}, ${state.current ? 'current' : 'out of date'}` : ''}.`,
+    `Node (needed by the backup lock): ${node ? `${node}` : 'not found on the PATH'}.`,
+    `Marker: ${marker ? 'present' : 'missing'}${beatAge}.`,
     `Settings: ${rt.problems.length === 0 ? 'valid' : rt.problems.join('; ')}.`,
     ...(fix.length > 0 ? ['To fix:', ...fix.map(f => `  ${f}`)] : []),
   ].join('\n')
@@ -175,6 +265,7 @@ export async function redactCommand($: EngineInterface, args: string): Promise<s
     case 'add': return add($, rest)
     case 'learn': return learn($)
     case 'allow': return allow($, rest)
+    case 'backup': return backup($, rest)
     case 'self-check': return selfCheck($, rest)
     case 'doctor': return doctor($)
     default: return `Unknown subcommand. ${USAGE}`

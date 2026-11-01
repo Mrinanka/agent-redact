@@ -159,7 +159,7 @@ test('a label line that was clean before is checked again when the value changes
   assert.equal(checker.scan('password=\npassword=Autumn' + '2026xk\n').findings.length, 1)
 })
 
-test('clearLines forgets the memory', () => {
+test('clearLines stays for old callers: a clean line, then the same label with a secret, is still found (D-074)', () => {
   const { checker } = createChecker()
   const v = pat()
   // A line is remembered only after it was clean; the same text with a secret is a different line.
@@ -168,7 +168,7 @@ test('clearLines forgets the memory', () => {
   assert.equal(checker.scan(`token = ${v}\n`).findings.length >= 1, true)
 })
 
-test('the file name is part of what is remembered', () => {
+test('the file name still matters: a clean line in a source file is checked again in an .env file', () => {
   const { checker } = createChecker()
   const line = 'password = Autumn' + '2026\n'
   assert.equal(checker.scan(line, { file: 'a.ts' }).findings.length, 0)
@@ -176,7 +176,7 @@ test('the file name is part of what is remembered', () => {
   assert.equal(checker.scan(line, { file: '.env' }).findings.length, 1)
 })
 
-test('the memory is capped', () => {
+test('30,000 clean lines do not stop a later secret from being found (D-074: no repeated-line memory)', () => {
   const { checker } = createChecker()
   for (let i = 0; i < 30; i++) {
     const lines = Array.from({ length: 1000 }, (_, k) => `INFO request ${i}-${k} used the token cache\n`).join('')

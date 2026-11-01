@@ -13,7 +13,7 @@
 // Everything shares one deadline. Running out is a check failure (`complete: false`): what was
 // found stays hidden, and the caller applies `on_check_failure` (spec §12).
 
-import type { Action, Checker } from '../checker/index.ts'
+import { LABEL_RULE_ID, type Action, type Checker } from '../checker/index.ts'
 import { decodeLayers, now, sourceSpan, type Layer } from './decoder.ts'
 import { formsOf, isBase64Form } from './forms.ts'
 import { SecretMatcher, type MatcherWord } from './matcher.ts'
@@ -91,6 +91,16 @@ const MAX_VALUE_FOR_PATTERNS = 4096
 /** The host refuses a $.state write over 4,194,304 characters of JSON; this leaves room to spare (D-053). */
 const MAX_EXPORT_CHARS = 4_000_000
 const ACTION_RANK: Record<Action, number> = { warn: 0, hide: 1, block: 2 }
+
+/**
+ * D-071: a value of letters only that a password label alone found (no format rule did) is hidden where it is
+ * found but not remembered. A label can't tell a password from a code word (`password: SecretString`), and
+ * remembering the word hides it through the rest of the text and the session. The cost, written in spec §22:
+ * a real letters-only password found this way is not hidden when it later appears without its label.
+ */
+function isPlainWordFromLabel(ruleId: string, value: string): boolean {
+  return ruleId === LABEL_RULE_ID && /^[A-Za-z]+$/.test(value)
+}
 
 /** A value found in a decoded buffer is UTF-8 bytes, one per character: this is how it was written. */
 function asWritten(value: string): string {
@@ -342,7 +352,7 @@ export class Redactor {
         if (this.isAllowed(value)) continue
         const [s, e] = layer ? sourceSpan(layer, f.start, f.end) : [f.start, f.end]
         spans.push({ s, e, value, label: cleanLabel(f.label), ruleId: f.ruleId, kind: f.kind, action: f.action, hintOk: f.showHint && layer === null, encoded: layer !== null })
-        if (f.action !== 'warn') this.addCatch(value, f.label, f.ruleId, f.showHint, f.action)
+        if (f.action !== 'warn' && !isPlainWordFromLabel(f.ruleId, value)) this.addCatch(value, f.label, f.ruleId, f.showHint, f.action)
       }
     }
 

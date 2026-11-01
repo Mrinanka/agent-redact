@@ -7,7 +7,7 @@ import { convertCustom, type CustomRuleInput } from './convert.ts'
 import { shannon } from './entropy.ts'
 import { checkAuthHeader, checkBearer, checkCommandPassword } from './credentials.ts'
 import { checkLabel, checkUrlPassword, LABELS, type LabelDef } from './labels.ts'
-import { LineMemory } from './lines.ts'
+import { scanPersonal } from './personal.ts'
 import { checkTruncatedKey } from './private-key.ts'
 import { GLOBAL_ALLOW, RULES } from './rules.generated.ts'
 import type { Action, AllowList, CompiledRule, Finding, RegexSpec, Rejection, ScanResult } from './types.ts'
@@ -15,6 +15,8 @@ import type { Action, AllowList, CompiledRule, Finding, RegexSpec, Rejection, Sc
 export const LABEL_RULE_ID = 'password-label'
 export const URL_RULE_ID = 'url-password'
 export const TRUNCATED_KEY_RULE_ID = 'private-key-truncated'
+export const EMAIL_RULE_ID = 'personal-email'
+export const PHONE_RULE_ID = 'personal-phone'
 
 export type CheckerOptions = {
   /** Rule ids to turn off. */
@@ -22,6 +24,8 @@ export type CheckerOptions = {
   /** Per-rule action; the default is hide. */
   actions?: Record<string, Action>
   custom?: CustomRuleInput[]
+  /** Also find email addresses and phone numbers (rule ids personal-email and personal-phone). Off by default (D-037). */
+  personalData?: boolean
   /** Time budget for one scan; the default is 4000. */
   budgetMs?: number
   /** For tests: act as an engine without the `d` regex flag. */
@@ -37,14 +41,12 @@ export type ScanOptions = {
 
 export type Checker = {
   scan(text: string, options?: ScanOptions): ScanResult
-  /** Forgets the repeated-line memory. */
+  /** Does nothing. A repeated-line memory used to be forgotten here; step 5 removed it because it gained no speed (spec §18). Kept so callers need no change. */
   clearLines(): void
   readonly ruleCount: number
 }
 
 const PIECE = 65_536
-const MAX_MEMORY_LINE = 2000
-const MAX_HIT_LINES = 50_000
 const DEFAULT_BUDGET_MS = 4000
 /** One rule may use this share of the budget, so a slow rule can't stop the rest running. */
 const RULE_SHARE = 4
@@ -201,6 +203,8 @@ export function createChecker(options: CheckerOptions = {}): { checker: Checker;
   const labelsOn = !off.has(LABEL_RULE_ID)
   const urlOn = !off.has(URL_RULE_ID)
   const keyOn = !off.has(TRUNCATED_KEY_RULE_ID)
+  const emailOn = options.personalData === true && !off.has(EMAIL_RULE_ID)
+  const phoneOn = options.personalData === true && !off.has(PHONE_RULE_ID)
   if (labelsOn) {
     for (const def of LABELS) addWord(def.word, { t: 'label', def })
     addWord('authorization', { t: 'auth' })
@@ -210,7 +214,6 @@ export function createChecker(options: CheckerOptions = {}): { checker: Checker;
   if (urlOn) addWord('://', { t: 'url' })
   if (keyOn) addWord('private key', { t: 'pkey' })
   const aho = new Aho(words)
-  const memory = new LineMemory()
 
   function engine(rt: Runtime): RegExp {
     if (!rt.re) rt.re = new RegExp(rt.rule.source, `${rt.rule.flags}g${useIndices ? 'd' : ''}`)
@@ -303,14 +306,11 @@ export function createChecker(options: CheckerOptions = {}): { checker: Checker;
     const t0 = now()
     if (text.length === 0) return { findings: [], complete: true }
     const file = scanOptions.file
-    const suffix = `\0${file ?? ''}`
     const raws: Raw[] = []
     // Areas to search for each rule, as [start, end] pairs, merged as they grow.
     const areas = new Map<number, number[]>()
-    const hitLines: [number, number][] = []
     let lineStart = -1
     let lineEnd = -1
-    let lineClean = false
     let claimedTo = 0 // label values already covered up to here
     let keyTo = 0 // truncated key scanned up to here
 
@@ -319,8 +319,6 @@ export function createChecker(options: CheckerOptions = {}): { checker: Checker;
         lineStart = text.lastIndexOf('\n', end - 1) + 1
         const nl = text.indexOf('\n', end - 1)
         lineEnd = nl < 0 ? text.length : nl
-        lineClean = lineEnd - lineStart <= MAX_MEMORY_LINE && memory.has(text.slice(lineStart, lineEnd) + suffix)
-        if (!lineClean && lineEnd - lineStart <= MAX_MEMORY_LINE && hitLines.length < MAX_HIT_LINES) hitLines.push([lineStart, lineEnd])
       }
       const wordLen = (words[w] as string).length
       const start = end - wordLen
@@ -328,7 +326,6 @@ export function createChecker(options: CheckerOptions = {}): { checker: Checker;
         switch (h.t) {
           case 'rule': {
             const rt = runtimes[h.index] as Runtime
-            if (lineClean && !rt.rule.spansLines) break
             if (!pathAllows(rt, file)) break
             const s = Math.max(0, start - rt.rule.area)
             const e = Math.min(text.length, end + rt.rule.area)
@@ -340,7 +337,7 @@ export function createChecker(options: CheckerOptions = {}): { checker: Checker;
             break
           }
           case 'label': {
-            if (lineClean || start < claimedTo) break
+            if (start < claimedTo) break
             const v = checkLabel(text, start, end, h.def, file, lineEnd)
             if (!v) break
             if (v.readTo > claimedTo) claimedTo = v.readTo
@@ -351,19 +348,16 @@ export function createChecker(options: CheckerOptions = {}): { checker: Checker;
           }
           case 'auth':
           case 'bearer': {
-            if (lineClean) break
             const v = h.t === 'auth' ? checkAuthHeader(text, end, lineEnd) : checkBearer(text, start, end, lineEnd)
             if (v) raws.push({ start: v.start, end: v.end, ruleId: LABEL_RULE_ID, label: 'AUTH_TOKEN', kind: 'label', action: actionOf(LABEL_RULE_ID), showHint: false, rank: 2 })
             break
           }
           case 'command': {
-            if (lineClean) break
             const v = checkCommandPassword(text, start, end, lineEnd)
             if (v) raws.push({ start: v.start, end: v.end, ruleId: LABEL_RULE_ID, label: 'PASSWORD', kind: 'label', action: actionOf(LABEL_RULE_ID), showHint: false, rank: 2 })
             break
           }
           case 'url': {
-            if (lineClean) break
             const v = checkUrlPassword(text, end)
             if (v) raws.push({ start: v.start, end: v.end, ruleId: URL_RULE_ID, label: 'URL_PASSWORD', kind: 'label', action: actionOf(URL_RULE_ID), showHint: false, rank: 2 })
             break
@@ -380,6 +374,13 @@ export function createChecker(options: CheckerOptions = {}): { checker: Checker;
         }
       }
     })
+
+    if (emailOn || phoneOn) {
+      for (const p of scanPersonal(text, { email: emailOn, phone: phoneOn })) {
+        const email = p.kind === 'email'
+        raws.push({ start: p.start, end: p.end, ruleId: email ? EMAIL_RULE_ID : PHONE_RULE_ID, label: email ? 'EMAIL' : 'PHONE', kind: 'format', action: actionOf(email ? EMAIL_RULE_ID : PHONE_RULE_ID), showHint: false, rank: 1 })
+      }
+    }
 
     let complete = true
     const budget = scanOptions.budgetMs ?? defaultBudget
@@ -409,18 +410,9 @@ export function createChecker(options: CheckerOptions = {}): { checker: Checker;
       }
     }
 
-    const findings = merge(raws)
-    if (complete) {
-      let f = 0
-      for (const [ls, le] of hitLines) {
-        while (f < findings.length && (findings[f] as Finding).end <= ls) f++
-        const touched = f < findings.length && (findings[f] as Finding).start < le
-        if (!touched) memory.add(text.slice(ls, le) + suffix)
-      }
-    }
-    return { findings, complete }
+    return { findings: merge(raws), complete }
   }
 
-  const checker: Checker = { scan, clearLines: () => memory.clear(), ruleCount: runtimes.length }
+  const checker: Checker = { scan, clearLines: () => undefined, ruleCount: runtimes.length }
   return { checker, errors }
 }

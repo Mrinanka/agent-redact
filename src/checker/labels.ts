@@ -58,6 +58,21 @@ function isFlagName(text: string, start: number): boolean {
 }
 
 const MAX_LOOK = 256
+const MAX_DECLARATION = 400
+const PROSE_WORD = /^[a-z]{6,}$/
+const PROSE_NEXT = /^ [A-Za-z]/
+
+/** `type Name<T> =`, with `export` and `declare` allowed in front: the head of a TypeScript type alias. */
+const TYPE_ALIAS = /^[ \t]*(?:export[ \t]+)?(?:declare[ \t]+)?type[ \t]+[A-Za-z_$][\w$]*[ \t]*(?:<[^=\n]*>)?[ \t]*=/
+
+/** Whether the line the label is on is a type alias. Code whatever the file is called, so the value after it is no password. */
+function onTypeAliasLine(text: string, at: number, lineEnd: number): boolean {
+  let s = at
+  const low = Math.max(0, at - MAX_DECLARATION)
+  while (s > low && text.charCodeAt(s - 1) !== 0x0a) s--
+  if (s > 0 && text.charCodeAt(s - 1) !== 0x0a) return false
+  return TYPE_ALIAS.test(text.slice(s, Math.min(lineEnd, s + MAX_DECLARATION)))
+}
 
 /** Index of the first unescaped `code` in text[from, limit), or -1. */
 function closingQuote(text: string, code: number, from: number, limit: number): number {
@@ -201,6 +216,11 @@ export function checkLabel(text: string, start: number, end: number, def: LabelD
   const value = text.slice(p.start, p.end)
   const long = p.readTo - i > MAX_LOOK
   const hold = (): ValueSpan | null => (long ? { start: p.start, end: p.start, readTo: p.readTo, showHint: false } : null)
+  // Prose: `token: signature mismatch`. After a colon, a plain lowercase word with another word right behind it
+  // reads as a sentence (spec §7.2). A password in a config file ends its line or is followed by a comment.
+  if (sepColon && !p.quoted && PROSE_WORD.test(value) && PROSE_NEXT.test(text.slice(p.end, p.end + 2))) return hold()
+  // A quoted value is a value whatever the line says; anything else on a type alias line is code.
+  if (!p.quoted && onTypeAliasLine(text, start, lineEnd)) return hold()
   if (isHarmless(value, { quoted: p.quoted, token: p.token, label, file })) return hold()
   const wanted = def.strong ? value.length >= 6 : looksRandom(value)
   if (!wanted) return hold()

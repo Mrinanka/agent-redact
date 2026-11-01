@@ -23,6 +23,8 @@ import { startLeakMock, type RequestRecord } from './server.ts'
 import { startTrap, type Attempt } from './trap.ts'
 import { ALLOWED_TOOLS, SCENARIOS, type Ctx, type Run, type Scenario } from './scenarios.ts'
 import type { ClaudeCommand } from './claude-bin.ts'
+import { MANAGED_PROOF_NOTICE, mergeHooks, userSettings } from './fixtures/backup-settings.ts'
+import type { ManagedFile } from './managed-file.ts'
 import { makeFake, makeWitness, plant, randomSource, type Fake, type FakeKind, type PlantForm } from '../test-sets/fakes.ts'
 
 export class KitError extends Error {}
@@ -61,6 +63,8 @@ export type Report = {
   claudeVersion: string
   pinnedVersion?: string
   plugin: string
+  /** Set when the backup lock, not the plugin, was the tool: its settings hooks were in the user's or the managed settings. */
+  backup?: 'user' | 'managed'
   verdict: Verdict
   doors: DoorResult[]
   runs: RunResult[]
@@ -85,6 +89,12 @@ export type KitOptions = {
   pinned?: string
   requirePinned?: boolean
   extraEnv?: Record<string, string>
+  /** Test the backup lock: `main` is the program's path (plugin/backup/backup/main.js). */
+  backup?: { main: string; where: 'user' | 'managed' }
+  /** Start Claude Code with --safe-mode, which turns off user hooks and plugins (check 0.8). */
+  safeMode?: boolean
+  /** The machine's managed settings file, written before the run and removed after it. */
+  managedFile?: ManagedFile
 }
 
 const RUN_TIMEOUT_MS = 180_000
@@ -211,9 +221,10 @@ function collectHits(record: RequestRecord, runIndex: number, doors: DoorState[]
   }
 }
 
-function runArgs(prompt: string, run: Run, sessionId: string, plugin: string | null, mcpConfig: string | undefined): string[] {
+function runArgs(prompt: string, run: Run, sessionId: string, plugin: string | null, mcpConfig: string | undefined, safeMode: boolean): string[] {
   return [
     '-p', prompt,
+    ...(safeMode ? ['--safe-mode'] : []),
     ...(plugin && !run.withoutPlugin ? ['--plugin-dir', plugin] : []),
     ...(run.resume ? ['--resume', sessionId] : ['--session-id', sessionId]),
     ...(mcpConfig ? ['--mcp-config', mcpConfig, '--strict-mcp-config'] : []),
@@ -228,8 +239,6 @@ function writeExtras(s: Scenario, ctx: Ctx, base: string, configDir: string): st
   if (s.contextHook) {
     const file = path.join(base, 'context.txt')
     fs.writeFileSync(file, ctx.block(s.contextHook))
-    const command = `node "${path.join(FIXTURES, 'context-hook.mjs')}" "${file}"`
-    fs.writeFileSync(path.join(configDir, 'settings.json'), JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [{ type: 'command', command, timeout: 30 }] }] } }))
   }
   if (!s.mcp) return undefined
   const note = path.join(base, 'mcp-note.txt')
@@ -238,6 +247,19 @@ function writeExtras(s: Scenario, ctx: Ctx, base: string, configDir: string): st
   const server = { type: 'stdio', command: process.execPath, args: [path.join(FIXTURES, 'mcp-server.mjs')], env: { LEAK_MCP_FILE: note } }
   fs.writeFileSync(config, JSON.stringify({ mcpServers: { leak: server } }))
   return config
+}
+
+/** The settings file for one run: the scenario's own hook, and the backup lock's when it is the tool and this run is not one made before it was installed. */
+export function writeSettings(s: Scenario, run: Run, base: string, configDir: string, opts: KitOptions): void {
+  let hooks: Record<string, unknown[]> = {}
+  if (s.contextHook) {
+    const command = `node "${path.join(FIXTURES, 'context-hook.mjs')}" "${path.join(base, 'context.txt')}"`
+    hooks = { UserPromptSubmit: [{ hooks: [{ type: 'command', command, timeout: 30 }] }] }
+  }
+  if (opts.backup?.where === 'user' && !run.withoutPlugin) hooks = mergeHooks(userSettings(opts.backup.main).hooks, hooks)
+  const file = path.join(configDir, 'settings.json')
+  if (Object.keys(hooks).length > 0) fs.writeFileSync(file, JSON.stringify({ hooks }))
+  else fs.rmSync(file, { force: true })
 }
 
 function removeFolder(dir: string): boolean {
@@ -266,23 +288,26 @@ async function runScenario(s: Scenario, opts: KitOptions, trap: { host: string; 
   let unreadable = 0
   let failed = false
   let leftover = false
-  let held = s.heldMessage !== undefined && opts.expect === 'clean'
+  // With the backup lock as the tool, a stopped prompt shows the lock's own reason.
+  const heldRe = opts.backup ? s.heldBackup : s.heldMessage
+  let held = heldRe !== undefined && opts.expect === 'clean'
   const store = s.seedStore === undefined ? undefined : backendFor(thisOS(), { exec: nodeExec, files: nodeFiles(path.join(configDir, 'secret-shield', 'store')) })
   try {
     for (const [name, content] of Object.entries(s.files?.(ctx) ?? {})) fs.writeFileSync(path.join(work, name), content)
     const mcpConfig = writeExtras(s, ctx, base, configDir)
     if (store) await saveList(store, doors.flatMap(d => d.fakes.map(f => ({ value: f.fake.value, label: 'kit', added: '2026-11-01' }))))
     for (const [index, run] of s.runs.entries()) {
+      writeSettings(s, run, base, configDir, opts)
       const mock = await startLeakMock({ script: run.script(ctx), needles })
       const env = runEnv(mock, trap, configDir, opts.extraEnv)
-      const args = runArgs(run.prompt(ctx), run, sessionId, opts.plugin, mcpConfig)
+      const args = runArgs(run.prompt(ctx), run, sessionId, opts.plugin, mcpConfig, opts.safeMode === true)
       const outcome = await runClaude(opts.claude, args, work, env, run.stdin?.(ctx), opts.timeoutMs ?? RUN_TIMEOUT_MS)
       await mock.close()
       for (const r of mock.records) {
         collectHits(r, index, doors, s.countFromRun ?? 0)
         if (r.unreadable) unreadable += 1
       }
-      if (index >= (s.countFromRun ?? 0) && (mock.records.length > 0 || !s.heldMessage?.test(outcome.stdout))) held = false
+      if (index >= (s.countFromRun ?? 0) && (mock.records.length > 0 || !heldRe?.test(outcome.stdout))) held = false
       const bad = outcome.timedOut || outcome.exit !== 0
       if (bad) failed = true
       runs.push({
@@ -297,12 +322,31 @@ async function runScenario(s: Scenario, opts: KitOptions, trap: { host: string; 
     }
     searchDisk(configDir, needles.filter(n => !n.fakeId.startsWith('witness:')), disk)
     pluginFailures(configDir, needles, s.name)
+    if (opts.backup?.where === 'managed' && !managedProofSeen(configDir)) {
+      console.error(`managed run, ${s.name}: the backup lock never logged the notice that proves it read the managed settings file's secretShield key`)
+      failed = true
+    }
   } finally {
     if (store) await saveList(store, []).catch(() => undefined)
     // In finally: the folder holds this run's fakes, so it goes even if a step throws.
     if (!opts.keep) leftover = !removeFolder(base)
   }
   return { doors, runs, unreadable, failed, leftover, held }
+}
+
+/** The managed file carries a setting the tool does not know; reading it is logged as a notice. */
+function managedProofSeen(configDir: string): boolean {
+  const dir = path.join(configDir, 'secret-shield', 'log')
+  if (!fs.existsSync(dir)) return false
+  const details = (name: string): unknown[] =>
+    fs.readFileSync(path.join(dir, name), 'utf8').split('\n').filter(l => l !== '').map(l => {
+      try {
+        return (JSON.parse(l) as { detail?: unknown }).detail
+      } catch {
+        return undefined
+      }
+    })
+  return fs.readdirSync(dir).some(name => name.endsWith('.backup.jsonl') && details(name).includes(MANAGED_PROOF_NOTICE))
 }
 
 /** What the plugin logged as failed, because a `-p` run shows no warning. The log holds no value; it is scrubbed anyway. */
@@ -372,6 +416,8 @@ export async function runKit(opts: KitOptions): Promise<Report> {
   let unreadable = 0
   let leftovers = 0
   try {
+    // Inside the try: whatever the install did, the file comes out again.
+    opts.managedFile?.install()
     for (const s of opts.scenarios ?? SCENARIOS) {
       const out = await runScenario(s, opts, trap, disk, allNeedles)
       for (const d of out.doors) doors.push(doorResult(s.name, d, doorVerdict(d, opts.expect, out.failed, out.held)))
@@ -381,6 +427,7 @@ export async function runKit(opts: KitOptions): Promise<Report> {
     }
   } finally {
     await trap.close()
+    opts.managedFile?.remove()
   }
   const attempts = trap.attempts
   const report: Report = {
@@ -390,6 +437,7 @@ export async function runKit(opts: KitOptions): Promise<Report> {
     claudeVersion,
     ...(opts.pinned ? { pinnedVersion: opts.pinned } : {}),
     plugin: opts.plugin ? path.basename(opts.plugin) : 'none',
+    ...(opts.backup ? { backup: opts.backup.where } : {}),
     verdict: overall(doors, attempts, unreadable),
     doors,
     runs,

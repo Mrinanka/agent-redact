@@ -6,6 +6,7 @@ import type { Args, EngineInterface, SessionAppendInput } from 'claude-code'
 import { COMMAND, takeMask } from './commands.ts'
 import { dropMedia, hasMedia } from './lib/core/media.ts'
 import { versionWarning } from './lib/core/versions.ts'
+import { refreshBackup } from './backup-copy.ts'
 import { emptyCopies } from './mention.ts'
 import { addHidden } from './state.ts'
 import { now } from './lib/core/decoder.ts'
@@ -279,6 +280,7 @@ export async function startUp($: EngineInterface): Promise<void> {
   await markRunning($)
   await registerCommands($)
   await pruneLogs($, rt.settings.log.days)
+  await keepBackupCurrent($, rt)
   await emptyCopies($)
   const line = versionWarning((await $.session.version()).version)
   if (line) warn($, 'version', line)
@@ -287,6 +289,16 @@ export async function startUp($: EngineInterface): Promise<void> {
     $.ui.status(OBSERVE_BANNER)
   }
   await writeLog($, [{ t: await $.clock.now(), event: 'start', mode: rt.settings.mode, detail: 'secret-shield started' }], cleaner(rt))
+}
+
+/** An existing stable copy of the backup lock is brought up to date; a session never creates one (D-068). */
+async function keepBackupCurrent($: EngineInterface, rt: Runtime): Promise<void> {
+  const out = await refreshBackup($)
+  if (out === 'refreshed') await writeLog($, [{ t: await $.clock.now(), event: 'notice', door: 'backup', detail: 'the backup lock copy was refreshed' }], cleaner(rt))
+  if (out === 'failed') {
+    warn($, 'backup-refresh', 'the backup lock copy could not be refreshed; run /redact backup')
+    await writeLog($, [{ t: await $.clock.now(), event: 'failure', door: 'backup', detail: 'refresh failed' }], cleaner(rt))
+  }
 }
 
 export async function shutDown($: EngineInterface): Promise<void> {

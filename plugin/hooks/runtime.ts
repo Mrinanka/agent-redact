@@ -11,6 +11,7 @@ import type { CatchEntry } from './lib/core/session.ts'
 import { checkerOptions, compileAllow, DEFAULTS, resolveSettings, type Settings, type SourceName } from './lib/core/settings.ts'
 import type { SecretEntry } from './lib/core/store.ts'
 import { loadRegisteredSecrets } from './backends.ts'
+import { markAlive } from './marker.ts'
 import { allowedTags } from './state.ts'
 import { writeLog } from './log-file.ts'
 import { warn } from './warn.ts'
@@ -145,6 +146,7 @@ async function build($: EngineInterface): Promise<Runtime> {
 /** The working parts, built on first use and refreshed every few seconds so a settings change is picked up. */
 export async function ready($: EngineInterface): Promise<Runtime> {
   const now = await $.clock.now()
+  await markAlive($, now)
   if (current && now - loadedAt < REFRESH_MS) return current
   if (!building) {
     building = build($).finally(() => {

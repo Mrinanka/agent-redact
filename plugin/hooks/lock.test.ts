@@ -6,7 +6,7 @@ import { expect, mock, test as kitTest } from 'claude-code/testing'
 
 const FAKE = ['ghp', 'Qw3rTy7UiOp9AsDf1GhJk5LzXc8VbNm2ZxCv'].join('_')
 
-type Options = { settings?: Record<string, unknown>; files?: Record<string, string>; messages?: unknown[]; policy?: Record<string, unknown>; check?: boolean; submit?: boolean; mention?: string[]; compact?: boolean; env?: boolean; mentionNothing?: boolean; version?: string; unreadable?: string[]; links?: Record<string, string>; dirs?: string[]; noSurfaces?: boolean; toolDenies?: boolean }
+type Options = { settings?: Record<string, unknown>; files?: Record<string, string>; messages?: unknown[]; policy?: Record<string, unknown>; check?: boolean; submit?: boolean; mention?: string[]; compact?: boolean; env?: boolean; mentionNothing?: boolean; version?: string; unreadable?: string[]; links?: Record<string, string>; dirs?: string[]; noSurfaces?: boolean; toolDenies?: boolean; pluginTree?: Record<string, string>; node?: string | false; userExtra?: Record<string, unknown> }
 /** The engine wants absolute paths, so a test's folders follow the system it runs on. */
 let posix = false
 const work = (name = ''): string => (posix ? `/work/${name}` : `D:\\work\\${name}`)
@@ -59,21 +59,35 @@ function world(on: On, o: Options = {}): World {
     closed.push(e.id)
     return { value: undefined }
   })
-  mock.env(on, { CLAUDE_CONFIG_DIR: cfg(), OS: 'Windows_NT' })
+  // `node` is on the PATH unless the test says it is not; the PATH also holds an empty entry, as many real ones do.
+  const sep = posix ? '/' : String.fromCharCode(92)
+  const nodeDir = ['', 'tools', 'node'].join(sep).replace(/^/, posix ? '' : 'D:')
+  mock.env(on, { CLAUDE_CONFIG_DIR: cfg(), OS: 'Windows_NT', PATH: o.node === false ? '' : `${nodeDir};` })
+  if (o.node !== false) files[`${nodeDir}${sep}node.exe`] = 'x'
   on('session.id', () => ({ value: 'sess-0002' }))
   on('session.cwd', () => ({ value: work().slice(0, -1) }))
   on('session.surfaces', () => ({ value: o.noSurfaces ? [] : ['terminal'] }))
   on('session.version', () => ({ value: { version: o.version ?? '2.1.316', base: '2.1.316', builtAt: 'x' } }))
   on('session.messages', () => ({ value: o.messages ?? [] }))
-  on('settings.read', (_$, e) => ({ value: e.source === 'user' ? { secretShield: o.settings ?? {} } : e.source === 'policy' ? (o.policy ?? {}) : {} }))
-  on('fs.exists', (_$, e) => ({ value: norm(landed(e.path)) in files || (o.dirs ?? []).includes(e.path) }))
+  on('settings.read', (_$, e) => ({ value: e.source === 'user' ? { secretShield: o.settings ?? {}, ...(o.userExtra ?? {}) } : e.source === 'policy' ? (o.policy ?? {}) : {} }))
+  /** The plugin's own build folder, wherever the plugin is installed: `<root>/backup/...` reads from `o.pluginTree`. */
+  const treeKey = (p: string): string | undefined => {
+    const slashed = p.split(String.fromCharCode(92)).join('/')
+    const at = slashed.lastIndexOf('/plugin/backup')
+    return o.pluginTree && at >= 0 ? slashed.slice(at + '/plugin/'.length) : undefined
+  }
+  on('fs.exists', (_$, e) => {
+    const k = treeKey(e.path)
+    return { value: (k !== undefined && (k in (o.pluginTree ?? {}) || Object.keys(o.pluginTree ?? {}).some(x => x.startsWith(`${k}/`)))) || norm(landed(e.path)) in files || (o.dirs ?? []).includes(e.path) }
+  })
   // As the engine does: a link leads on, a read over 4 MiB rejects, a missing path rejects.
   const landed = (p: string): string => {
     for (const [from, to] of Object.entries(o.links ?? {})) if (p === from || p.startsWith(`${from}${posix ? '/' : '\\'}`)) return `${to}${p.slice(from.length)}`
     return p
   }
   on('fs.read', (_$, e) => {
-    const text = files[norm(landed(e.path))] ?? ''
+    const k = treeKey(e.path)
+    const text = k !== undefined && o.pluginTree ? (o.pluginTree[k] ?? '') : (files[norm(landed(e.path))] ?? '')
     if (o.unreadable?.includes(e.path)) throw new Error('EACCES')
     if (text.length > 4 * 1024 * 1024) throw new Error('over 4 MiB')
     return { value: text }
@@ -84,7 +98,19 @@ function world(on: On, o: Options = {}): World {
     if (!(norm(real) in files)) throw new Error('ENOENT')
     return { value: { kind: 'file', size: files[norm(real)]?.length ?? 0, realPath: real } }
   })
-  on('fs.list', () => ({ value: o.env ? [{ name: '.env', kind: 'file', size: 60 }] : [] }))
+  on('fs.list', (_$, e) => {
+    const k = treeKey(e.path)
+    if (k !== undefined && o.pluginTree) {
+      const names = new Map<string, 'file' | 'dir'>()
+      for (const key of Object.keys(o.pluginTree)) {
+        if (key !== k && !key.startsWith(`${k}/`)) continue
+        const [head, ...more] = key.slice(k.length + 1).split('/')
+        if (head) names.set(head, more.length > 0 ? 'dir' : 'file')
+      }
+      return { value: [...names].map(([name, kind]) => ({ name, kind, size: 10 })) }
+    }
+    return { value: o.env ? [{ name: '.env', kind: 'file', size: 60 }] : [] }
+  })
   on('fs.write', (_$, e) => {
     writes.push({ path: e.path, text: e.text })
     files[norm(e.path)] = e.text
@@ -92,6 +118,10 @@ function world(on: On, o: Options = {}): World {
   })
   // DPAPI stood in by an echo: what goes in on stdin comes back on stdout.
   on('process.run', (_$, e) => {
+    if (((e as { argv?: string[] }).argv ?? [])[0]?.endsWith('node.exe')) {
+      return { value: { exitCode: 0, stdout: `v${o.node ?? '24.22.1'}
+`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+    }
     if (storeDown.on) throw new Error('store went away')
     if (storeDown.locked) return { value: { exitCode: 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     stdin.push(e.init?.stdin ?? '')
@@ -975,6 +1005,31 @@ test('/redact learn: a press changes a tick, and the save follows it', async ($,
   expect(w.ui.some(l => l.includes('saved 0 of 2'))).toBe(true)
 })
 
+test('/redact learn: a ticked value under 6 characters is skipped and said so, as /redact add refuses it', async ($, on) => {
+  const file = work('.env')
+  const w = world(on, { files: { [file]: `GITHUB_TOKEN=${FAKE}\nPORT=8080\n` }, env: true })
+  await redact($, 'learn')
+  const ui = await $.ui.mount(LEARN as never) as never as { press: (t: unknown) => Promise<unknown> }
+  await ui.press({ key: 'v1' })
+  await ui.press({ key: 'save' })
+  expect(w.ui.some(l => l.includes('saved 1 of 2') && l.includes('1 skipped') && l.includes('6 to 8,192'))).toBe(true)
+  await $.session.append(row('listening on 8080 now'))
+  expect(JSON.stringify(w.session.appended()).includes('8080')).toBe(true)
+})
+
+test('/redact learn: saving what is already saved says so, instead of only "saved 0"', async ($, on) => {
+  const file = work('.env')
+  const w = world(on, { files: { [file]: `GITHUB_TOKEN=${FAKE}\nPORT=8080\n` }, env: true })
+  await redact($, 'learn')
+  const first = await $.ui.mount(LEARN as never) as never as { press: (t: unknown) => Promise<unknown>; unmount: () => Promise<void> }
+  await first.press({ key: 'save' })
+  await first.unmount()
+  await redact($, 'learn')
+  const second = await $.ui.mount(LEARN as never) as never as { press: (t: unknown) => Promise<unknown> }
+  await second.press({ key: 'save' })
+  expect(w.ui.some(l => l.includes('saved 0 of 2') && l.includes('1 already saved'))).toBe(true)
+})
+
 test('/redact learn: a list too big for the store says it is full', async ($, on) => {
   const file = work('.env')
   const varied = (i: number): string => Array.from({ length: 7000 }, (_, k) => 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'.charAt((k * k * 31 + k * i + i) % 56)).join('')
@@ -985,4 +1040,143 @@ test('/redact learn: a list too big for the store says it is full', async ($, on
   await ui.press({ key: 'save' })
   expect((await ui.find({ type: 'Text', text: /is full/ }))?.text).toContain('nothing was saved')
   expect(w.closed).toEqual([])
+})
+
+// ---- step 5: the backup lock's marker, copy and doctor lines ------------------------------------
+
+const markerWrites = (w: World): { path: string; text: string }[] => w.writes.filter(x => x.path.includes('markers'))
+
+test('the marker carries a beat, refreshed at most every 30 s while rows arrive (R-04)', async ($, on) => {
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  const w = world(on)
+  await $.session.start({ cwd: work(), surface: 'terminal', isInteractive: false })
+  const first = markerWrites(w).at(-1)
+  expect(first?.text.includes('"running":true')).toBe(true)
+  expect(first?.text.includes(`"beat":${w.clock.now}`)).toBe(true)
+  const startedAt = JSON.parse(first?.text ?? '{}').started
+  const count = markerWrites(w).length
+  w.clock.now += 10_000
+  await $.session.append(row('quiet row'))
+  expect(markerWrites(w).length).toBe(count)
+  w.clock.now += 31_000
+  await $.session.append(row('another quiet row'))
+  const later = markerWrites(w).at(-1)
+  expect(markerWrites(w).length).toBeGreaterThan(count)
+  expect(JSON.parse(later?.text ?? '{}').beat).toBe(w.clock.now)
+  expect(JSON.parse(later?.text ?? '{}').started).toBe(startedAt)
+})
+
+test('a row before any session.start writes a marker too, so a restarted worker is not taken for a dead one', async ($, on) => {
+  const w = world(on)
+  await $.session.append(row('first row after a restart'))
+  expect(markerWrites(w).at(-1)?.text.includes('"running":true')).toBe(true)
+})
+
+const SOURCE = (): Record<string, string> => ({
+  'backup/manifest.json': '{"version":"0.1.0","files":{"a":"1"}}',
+  'backup/package.json': '{ "type": "module" }',
+  'backup/backup/main.js': '// main\n',
+  'backup/core/x.js': '// x\n',
+})
+
+const backupWorld = (on: On, o: Options = {}, extra: Record<string, string> = {}): World => world(on, { ...o, pluginTree: { ...SOURCE(), ...extra } })
+
+test('/redact backup copies the build to the stable folder, manifest last, and prints the snippet', async ($, on) => {
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  const w = backupWorld(on)
+  const out = await redact($, 'backup')
+  const stable = cfg('secret-shield', 'backup')
+  const written = w.writes.filter(x => x.path.startsWith(stable))
+  expect(written.map(x => x.path.slice(stable.length + 1).replace(/\\/g, '/')).sort()).toEqual(['backup/main.js', 'core/x.js', 'manifest.json', 'package.json'])
+  expect(written.at(-1)?.path.endsWith('manifest.json')).toBe(true)
+  expect(written.find(x => x.path.endsWith('main.js'))?.text).toBe('// main\n')
+  expect(out).toContain('UserPromptSubmit')
+  expect(out).toContain('"command": "node"')
+  expect(out).toContain('main.js')
+  expect(out).not.toContain('"onFailure":')
+  expect(out).toContain('Node 24.22.1 found')
+  expect(await redact($, 'backup managed')).toContain('"onFailure": "block"')
+})
+
+test('/redact backup says so when Node is missing', async ($, on) => {
+  backupWorld(on, { node: false })
+  expect(await redact($, 'backup')).toContain('Node was NOT found')
+})
+
+test('/redact backup with nothing to copy says so', async ($, on) => {
+  world(on)
+  expect(await redact($, 'backup')).toContain('could not be copied')
+})
+
+test('/redact backup rejects an unknown argument', async ($, on) => {
+  backupWorld(on)
+  expect(await redact($, 'backup sideways')).toContain('Use: /redact backup')
+})
+
+test('a session start never creates the stable copy unasked (D-068)', async ($, on) => {
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  const w = backupWorld(on)
+  await $.session.start({ cwd: work(), surface: 'terminal', isInteractive: false })
+  expect(w.writes.filter(x => x.path.startsWith(cfg('secret-shield', 'backup'))).length).toBe(0)
+})
+
+test('a session start refreshes an existing stale copy', async ($, on) => {
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  const w = backupWorld(on)
+  w.files[cfg('secret-shield', 'backup', 'manifest.json')] = '{"version":"0.0.9","files":{}}'
+  await $.session.start({ cwd: work(), surface: 'terminal', isInteractive: false })
+  const refreshed = w.writes.filter(x => x.path.startsWith(cfg('secret-shield', 'backup')))
+  expect(refreshed.length).toBe(4)
+  expect(refreshed.at(-1)?.path.endsWith('manifest.json')).toBe(true)
+})
+
+test('a session start leaves a current copy alone', async ($, on) => {
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  const w = backupWorld(on)
+  w.files[cfg('secret-shield', 'backup', 'manifest.json')] = SOURCE()['backup/manifest.json'] as string
+  await $.session.start({ cwd: work(), surface: 'terminal', isInteractive: false })
+  expect(w.writes.filter(x => x.path.startsWith(cfg('secret-shield', 'backup'))).length).toBe(0)
+})
+
+const HOOKS = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({
+  hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: 'node', args: [cfg('secret-shield', 'backup', 'backup', 'main.js')], timeout: 30, ...extra }] }] },
+})
+
+test('doctor and the status line say where the backup lock stands', async ($, on) => {
+  const w = backupWorld(on)
+  const bare = await redact($, 'doctor')
+  expect(bare).toContain('Backup lock: not installed')
+  expect(bare).toContain('run /redact backup')
+  expect(bare).toContain('Node (needed by the backup lock): 24.22.1')
+  expect(await redact($, '')).toContain('Backup lock: not set up')
+  w.files[cfg('secret-shield', 'backup', 'manifest.json')] = SOURCE()['backup/manifest.json'] as string
+  expect(await redact($, '')).toContain('copied, but no settings run it yet')
+})
+
+test('doctor warns when the hooks lack onFailure block, when Node is missing and when the copy is old', async ($, on) => {
+  const w = backupWorld(on, { userExtra: HOOKS(), node: false })
+  w.files[cfg('secret-shield', 'backup', 'manifest.json')] = '{"version":"0.0.9","files":{}}'
+  const out = await redact($, 'doctor')
+  expect(out).toContain('Backup lock: hooks found in user settings; copy 0.0.9, out of date')
+  expect(out).toContain('not found on the PATH')
+  expect(out).toContain('onFailure "block"')
+  expect(await redact($, '')).toContain('copy out of date')
+})
+
+test('doctor is quiet about onFailure when the hooks set it, and says the copy is current', async ($, on) => {
+  const w = backupWorld(on, { userExtra: HOOKS({ onFailure: 'block' }) })
+  w.files[cfg('secret-shield', 'backup', 'manifest.json')] = SOURCE()['backup/manifest.json'] as string
+  const out = await redact($, 'doctor')
+  expect(out).toContain('copy 0.1.0, current')
+  expect(out).not.toContain('do not set onFailure')
+})
+
+test('doctor shows the marker and how long ago the main lock last beat', async ($, on) => {
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  const w = world(on)
+  await $.session.start({ cwd: work(), surface: 'terminal', isInteractive: false })
+  const marker = markerWrites(w).at(-1)
+  w.files[marker?.path ?? ''] = marker?.text ?? ''
+  w.clock.now += 12_000
+  expect(await redact($, 'doctor')).toMatch(/Marker: present, last beat 1[12] s ago/)
 })

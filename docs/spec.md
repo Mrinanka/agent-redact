@@ -82,7 +82,14 @@ A Claude Code plugin with a hooks module, written in TypeScript. It uses these h
 
 ### 5.2 Backup lock (settings hooks)
 
-Settings-file hooks (`UserPromptSubmit`, `PreToolUse`, `PostToolUse`) that run the same checker with Node. They only act when the main lock isn't running, for example after a crash, or when an admin policy blocks plugin hooks.
+Settings-file hooks (`UserPromptSubmit`, `PreToolUse`, `PostToolUse`) that run the same checker with Node. They only act when the main lock isn't alive, for example after a crash, or when an admin policy blocks plugin hooks. Node is required (D-069). The build is `plugin/backup/`, compiled from `src/backup`, `src/core` and `src/checker` by `npm run plugin:build`; `/redact backup` copies it to `<config>/secret-shield/backup/` and prints the settings to paste (D-068, section 15).
+
+**Strict (D-070).** When it acts, the backup lock is strict:
+- **Before a tool runs,** every check applies to the call: saved values, shapes and labels (not only saved values, as the main lock's outbound check does), then self-protection and the overwrite guard (sections 10, 11, 17). A call that holds a secret is denied with a reason that names a kind and a tag, never a value.
+- **A prompt** that holds a secret is blocked whole, because a hook can't hide part of one.
+- **Tool output** is cleaned and keeps its shape; a note says how many values were hidden.
+- **Settings** come from the same sources as the main lock's, read from files (D-076).
+- **A check that can't finish** follows `on_check_failure` (section 12): `hold` blocks, denies or withholds; `allow` passes with a warning and a log line. Observe mode holds nothing.
 
 **Safe mode (check 0.8).** `--safe-mode` turns off user settings hooks along with plugins. So in Personal mode, safe mode turns off **both** locks. Only backup-lock hooks installed through managed settings still run in safe mode.
 
@@ -91,9 +98,12 @@ Settings-file hooks (`UserPromptSubmit`, `PreToolUse`, `PostToolUse`) that run t
 | Block a prompt that contains a secret | Hide part of a prompt and let the rest through |
 | Outbound check before a tool runs | Cover `@` files, attachments or compaction summaries |
 | Change a tool's input before it runs (check 0.9) | |
-| Clean a tool's output after it runs, built-in tools included, by returning the tool's own result with secrets replaced. The result **must** keep the tool's shape; any other value is ignored (check 0.9). | |
+| Clean a tool's output after it runs, built-in tools included, by returning the tool's own result with secrets replaced. The result **must** keep the tool's shape; any other value is ignored (check 0.9). Proven for Read, Bash (a 200 KB output too), connected tools and a subagent's Read (spike S3). | Clean the error of a **failed command**: the one hook that sees it can only stop the request, and the raw error is sent on the next prompt (spike S1, D-072) |
 
-- **R-04** The main lock **must** write an "I'm running" marker per session. The backup lock **must** check for the marker and do nothing when it says running, and switch to strict mode for that session when it is missing or says not running. A mod can't delete a file, so the marker ends the session as `running: false`, which counts as missing (D-047).
+**Doors the backup lock covers** (the leak kit runs each one with the plugin not loaded, and no fake may be seen): a typed prompt, a pasted prompt, a file Claude reads, command output (large too), a connected tool's result, a subagent's file read.
+**Doors it does not cover** (the kit runs each expecting every fake to be seen, so the list is proven, not claimed): `@` files, a failed command's error, a compaction summary, a resumed session's history, project `CLAUDE.md` text and settings-hook context.
+
+- **R-04** The main lock **must** write an "I'm running" marker per session, with a `beat` it refreshes while it is used (at most every 30 seconds). The backup lock **must** check the marker first and do nothing when it says `running: true` with a fresh beat (not older than 5 minutes), and be strict for that session when the marker is missing, unreadable, not running, or stale. A crash leaves `running: true` behind, so age decides; a beat from the future (beyond 5 seconds) counts as stale. A mod can't delete a file, so the marker ends the session as `running: false`, which counts as missing (D-047, D-077). The 30 seconds and 5 minutes are first guesses with no measurement behind them.
 
 ### 5.3 Personal mode vs Managed mode
 
@@ -108,6 +118,8 @@ Settings-file hooks (`UserPromptSubmit`, `PreToolUse`, `PostToolUse`) that run t
 | If the organization sets `allowManagedHooksOnly` | **Does nothing.** User-tier plugins load no hooks and user settings hooks don't run (check 0.7). A plain command (no hooks) still loads and says so. | Works |
 | If a project's `.claude/settings.json` (or `settings.local.json`) sets `disableAllHooks` | **Does nothing**, silently. Both locks are off (check 0.14). | Works: a project can't turn off managed hooks |
 | `--safe-mode`, `--bare`, `CLAUDE_CODE_SIMPLE=1` | **Does nothing** (checks 0.8, 0.14) | Safe mode: managed backup-lock hooks still run |
+
+The backup lock is installed in Personal mode by `/redact backup` and the Personal snippet (`docs/snippets/personal.json`), which leaves `onFailure` out; in Managed mode an administrator uses the Managed snippet (`docs/snippets/managed.json`), which sets `onFailure: "block"` on all three hooks and carries a `--policy` placeholder (D-069, D-076). `/redact doctor` warns when the hooks lack `onFailure: "block"`.
 
 - **R-05** When the tool can't run its hooks (for example under `allowManagedHooksOnly`, `disableAllHooks` or `--safe-mode` in Personal mode), it **must** say so plainly where possible. Users must never believe they are protected when they aren't. When hooks are blocked, none of the tool's code runs (checks 0.7, 0.14), so a plain command with no hooks, `/secret-shield:doctor`, **must** say the hooks are not running. A plugin's plain command always carries the plugin's name; `/redact` only exists while the hooks run (D-059).
 
@@ -182,6 +194,8 @@ Headers and command lines (D-034), where the scheme word and the flag stay visib
   - Dotted values that end in their own label: `config.password`, `self.secret`, `args.token`. Other dotted values and generics count as code only in a source file, since `DB_PASSWORD=Harbor.Meadow` in a `.env` file is a password (D-035).
   - Unquoted single identifiers in source files, meaning a known source extension (`.ts`, `.py`, `.java`, and so on; not `.sh` or `.env`). A **quoted** value is never treated as code.
   - A value equal to its own label (`password = password`), in any file.
+  - **A type alias line** (D-075): on a line that starts `type Name<...> =`, with `export` and `declare` allowed in front, an unquoted value is code in any file, since the file name isn't always known (all Bash output has none). A quoted value is still a value.
+- **Prose after a colon** (D-075): after `label:` and a space, an unquoted value of six or more lowercase letters with a space and a letter right behind it reads as a sentence (`token: signature mismatch`) and is left alone. A colon only, not `=`; a capital, a digit, a quote, a comment or the end of the line makes it a value again. The cost: `password: summerrain admin` doesn't hide `summerrain`.
 - Documented example keys (for example AWS's documented example access key, the one ending in `EXAMPLE`) and database URLs without a password.
 
 - **R-08** Each harmless rule **must** have a test showing it is left alone, and a matching test showing that a real-looking value in the same spot is hidden.
@@ -225,7 +239,7 @@ A placeholder in place of each secret, for example:
 
 - **Label:** what kind of secret it was.
 - **Last 4 characters:** only for secrets of 12 or more characters, and never for password-label values (check 2). Setting `hints: off` removes them.
-- **Random tag:** 13 base32 characters, which is 65 random bits from a secure source. The same secret gets the same tag within a session, including in subagents. The rare exception is a restart of the hidden checks mid-session: a value that could not be saved for it, because it is over 8,192 characters (D-052) or didn't fit in the saved list (D-053), gets a new tag. Nothing is revealed. Two different secrets never share a tag.
+- **Random tag:** 13 base32 characters, which is 65 random bits from a secure source. The same secret gets the same tag within a session, including in subagents. The rare exception is a restart of the hidden checks mid-session: a value that could not be saved for it, because it is over 8,192 characters (D-052) or didn't fit in the saved list (D-053), gets a new tag. Nothing is revealed. Two different secrets never share a tag. The backup lock is a new process for each hook call and keeps nothing between calls, so it makes its own tags: the same value gets a different tag in each of its answers, and none of them matches the main lock's. A stable tag would need a key on disk, and a keyed hash of a short password there would break the rule that no hash of a secret is stored (`src/core/store.ts`, R-09). The overwrite guard still works through its same-kind fallback (section 10).
 
 The placeholder note added to Claude's instructions says:
 - These are hidden values.
@@ -331,8 +345,9 @@ A project **can** add custom rules and `secret_files` patterns, and choose stric
 | `/redact add [--label name]` | Register a secret, pasted into a box. Never on the command line, and not in `claude -p` (D-057) |
 | `/redact learn` | Pick secrets from `.env*` files |
 | `/redact allow <tag>` | Mark a hidden value as harmless (`--always` to remember, in the OS password store). With no tag: lift a resume block, or let the last guarded change through once (D-060) |
+| `/redact backup [managed]` | Copies the backup lock to `<config>/secret-shield/backup/` and prints the settings to add (Personal, or `managed` for the Managed snippet), and whether Node was found. A later session refreshes an existing copy when it is out of date and never makes one unasked (D-068). |
 | `/redact self-check` | Runs built-in test cases and shows pass or fail. `--report` writes a shareable report file (no secrets) for a security team or a bug report. |
-| `/redact doctor` (also `/secret-shield:doctor`) | Checks the environment: Claude Code version (tested or not), Personal or Managed mode, plugin tier, whether hooks are allowed to run, password store available, backup lock installed, marker present, settings valid. Says what to fix. |
+| `/redact doctor` (also `/secret-shield:doctor`) | Checks the environment: Claude Code version (tested or not), Personal or Managed mode, plugin tier, whether hooks are allowed to run, password store available, backup lock installed (hooks found in user or managed settings, copy current or old, `onFailure`), Node found, marker present and when it last beat, settings valid. Says what to fix. |
 
 - **R-16** Claude **must not** be able to run these commands. Only the user can.
 
@@ -359,10 +374,10 @@ Each piece of text is checked once, when it first arrives, and saved already cle
 2. **Run patterns near hits only.** Run only the patterns whose keywords appeared, only on the area around each hit. The area's size is worked out from each pattern at build time, so it's guaranteed big enough.
 3. **Look for registered and caught secrets.** One Aho-Corasick pass over the text, built from the secrets and their encoded forms (base64 at all 3 alignments with the edge characters trimmed, base64url, URL-encoded, hex, JSON-escaped). The cost is roughly the same for 10 or 10,000 secrets.
 4. **Decode only what looks encoded,** in pieces, including very large blocks, and send the decoded text back through steps 1 to 3. At most 3 layers deep.
-5. **Skip repeated lines** already checked and found clean this session. This memory is cleared whenever a new secret is registered.
+5. **Not done: skipping repeated lines.** A memory of lines already found clean was built in step 2 and removed in step 5 (D-074). 160 of the 219 rules can match across a newline, so it skipped almost nothing, and measured warm it gained between -15% and 13%.
 
 - Hard ceiling: every hook must finish well inside Claude Code's 10-second budget, on a 2 MB input, on a modest laptop. CPU-bound work is cut off at about 6 seconds (check 0.6), so that is the real ceiling for checking work.
-- Speed targets are set from the first measurements (`plan.md`, Step 2) and published in the repo.
+- Speed, catch and false-alarm targets are set from measurements and published in `docs/targets.md` (D-078); `npm run measure` fails when one is missed.
 
 ## 19. Install and distribution
 
@@ -370,10 +385,10 @@ Each piece of text is checked once, when it first arrives, and saved already cle
 - The repo includes `.claude-plugin/marketplace.json`.
 - Install: `/plugin install <name> --marketplace <owner>/<repo>`.
 - Users can pin a version.
-- Optional backup lock: a documented snippet for `~/.claude/settings.json`.
+- Optional backup lock: `/redact backup` copies it and prints the snippet for `~/.claude/settings.json` (`docs/snippets/personal.json`). It needs Node.
 
 **Managed mode**
-- A `docs/managed.md` guide with ready-to-use managed-settings examples for macOS, Windows and Linux: the plugin in the `prepend` tier, the backup lock hooks, locked settings, and recommended values (`on_check_failure: hold`).
+- A `docs/managed.md` guide with ready-to-use managed-settings examples for macOS, Windows and Linux: the plugin in the `prepend` tier, the backup lock hooks (`docs/snippets/managed.json`, with `onFailure: "block"` and `--policy` when settings arrive by MDM or from the server), locked settings, and recommended values (`on_check_failure: hold`).
 - Notes for MDM tools (Jamf, Intune) and for offline or mirrored installs (an internal git mirror of the repo).
 
 **Releases**
@@ -425,7 +440,15 @@ The maintainers can't test inside every organization. So everything needed to te
   - plugins in a higher tier can skip this tool
   - `allowManagedHooksOnly` turns it off
   - a project's `disableAllHooks` setting, `--bare` and `CLAUDE_CODE_SIMPLE=1` turn the tool off, silently
-- **Safe mode** turns the main lock off. In Personal mode it turns the backup lock off too. A backup lock installed through managed settings still runs, but it can only block messages, not hide parts of them.
+- **Safe mode** turns the main lock off. In Personal mode it turns the backup lock off too. A backup lock installed through managed settings still runs (check 0.8; proven in CI by `npm run leak-test:managed`), within the limits below.
+- **The backup lock's limits** (D-072, D-076):
+  - It doesn't cover `@` files, the error of a failed command, a compaction summary, a resumed session's history, project `CLAUDE.md` text or settings-hook context (section 5.2). The kit proves each one leaks. A failed command's raw error is sent on the next prompt even if the request is stopped once.
+  - It blocks a prompt whole. Claude Code still writes a blocked prompt to the transcript and, under `claude -p`, prints it back on screen (spike S4).
+  - Its tags are its own (section 9), and it keeps nothing between calls. A letters-only password a label found is hidden only where the label is (D-071), so a bare copy in a later call isn't. A value marked harmless for one session only (kept in the main lock's state) isn't visible to it, so it may refuse something the main lock allowed.
+  - A setting given only with `--settings` isn't visible to a hook. A managed setting delivered by MDM or from the server isn't either, unless a copy of it is given with `--policy <file>` (the Managed snippet has the argument); without it a `hold` there reads as `allow`.
+  - Tool output of 16 MiB or more, and any single text of 4 MiB or more, isn't checked (a failed check, section 12). Under `hold` a 4 MiB text is withheld, but a 16 MiB tool output can't be, because the hook can't rebuild what it could not read. Output that Claude Code itself persists to a file is cleaned in what the model reads, not in the file.
+  - It needs Node (D-069), and tells nothing of a failed start unless the hooks set `onFailure: "block"`, which the Personal snippet doesn't. On Windows, with saved secrets, each hook that acts starts PowerShell for about one second, so about two seconds per tool call while the main lock is down; standing down doesn't read the store.
+  - Whether Claude Code shows a hook's `systemMessage` or stderr on screen is unverified interactively (spike S6); under `claude -p` it shows neither, so warnings reach the log and `/redact doctor`.
 - **Failed or slow checks** let content through by default (section 12).
 - **Observe mode** hides nothing, by design.
 - **Bare values in base64.** A value with no shape and no label is found once it is decoded only if it has a shape, was registered, or was caught earlier. The catch set has 3 such cases (D-046).
@@ -444,6 +467,7 @@ The single list of everything not being built now. Anything deferred during a bu
 
 **Parked from v1** (what · why · decision):
 
+- A single-program build of the backup lock (no Node needed), and a check of `@` files from the backup's prompt hook · Node is required in v1 and the build is TypeScript compiled by `tsc`; a second build is more to test on three systems, and `@` text isn't in the prompt hook's input (new idea, unchecked) · D-069
 - Hidden test set, scored once per release · too much effort for v1; the catch, code and false-alarm sets are enough to start · D-019
 - Large downloaded false-alarm corpus · the `.ts` files in `node_modules/typescript` and `node_modules/@types/node` are a known-license set with no download · D-019
 - Full compatibility matrix (versions × OS × surface) · one pinned version on 3 OSes is enough for v1 · D-019
