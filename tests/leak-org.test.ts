@@ -11,7 +11,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { runKit, type KitOptions } from '../tools/leak-test/kit.ts'
 import { GUARDED_HOLD_MESSAGE, GUARDED_OPEN, ORG_SCENARIOS, buildMarketplaceFolder, guardedHoldScenarios, guardedScenarios, orgManagedContent, tierProblem, warningProblem } from '../tools/leak-test/org.ts'
-import { GUARDED_ONLY, SCENARIOS } from '../tools/leak-test/scenarios.ts'
+import { ALLOWED_TOOLS, GUARDED_ONLY, SCENARIOS } from '../tools/leak-test/scenarios.ts'
 import { guardHeld, guardWarning } from '../src/core/guard-check.ts'
 import type { Scenario } from '../tools/leak-test/scenarios.ts'
 
@@ -115,6 +115,18 @@ test('the scenario sets: the org run skips the resume door, which needs a run wi
   const doors = new Set(SCENARIOS.flatMap(s => s.doors.map(d => `${s.name}/${d}`)))
   for (const d of GUARDED_OPEN) assert.ok(doors.has(d), d)
   assert.ok(!ORG_SCENARIOS.includes('resume'))
+})
+
+test('skill text is a door: a real skill in the project, asked for through the Skill tool, in the organization run and open under the guard', () => {
+  const s = SCENARIOS.find(x => x.name === 'skill-text')
+  assert.ok(s, 'skill-text is missing')
+  assert.ok(ALLOWED_TOOLS.includes('Skill'))
+  const c = { dir: '', block: () => 'BLOCK', witness: () => '', bare: () => '' }
+  const file = s.files?.(c)?.[path.join('.claude', 'skills', 'leak-note', 'SKILL.md')]
+  assert.match(String(file), /^---\nname: leak-note\n/)
+  assert.match(String(file), /BLOCK/)
+  assert.ok(ORG_SCENARIOS.includes('skill-text'))
+  assert.ok(GUARDED_OPEN.includes('skill-text/skill'))
 })
 
 test('guarded run: the compaction door is the held one, because the guard stores the summary raw and the resume check stops the next message', () => {

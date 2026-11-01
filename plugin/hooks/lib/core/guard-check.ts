@@ -34,12 +34,12 @@ export function guardState(f: GuardFacts): GuardState {
 }
 
 export function guardWarning(): string {
-  return 'Claude Code is not sending some events to this plugin, so instruction files, hook context, attachments and compaction summaries are NOT being checked. A guard built into Claude Code takes them first on machines with managed settings or a managed MCP file, or with a Team or Enterprise login. Only an organization plugin install closes this (docs/managed.md).'
+  return 'Claude Code is not sending some events to this plugin, so instruction files, hook context, skill text, attachments and compaction summaries are NOT being checked. A guard built into Claude Code takes them first on machines with managed settings or a managed MCP file, or with a Team or Enterprise login. Only an organization plugin install closes this (docs/managed.md).'
 }
 
 /** The answer in place of a request, under `on_check_failure: hold`. */
 export function guardHeld(): string {
-  return 'aegiscontext: this request was not sent. on_check_failure is hold, and Claude Code is not sending this plugin instruction files, hook context, attachments or compaction summaries to check. Only an organization plugin install closes this (docs/managed.md). To carry on without those checks, set on_check_failure to allow, if your settings let you.'
+  return 'aegiscontext: this request was not sent. on_check_failure is hold, and Claude Code is not sending this plugin instruction files, hook context, skill text, attachments or compaction summaries to check. Only an organization plugin install closes this (docs/managed.md). To carry on without those checks, set on_check_failure to allow, if your settings let you.'
 }
 
 export function guardFix(f: GuardFacts): string | undefined {
@@ -53,7 +53,7 @@ export function guardDoctorLines(f: GuardFacts): string[] {
     state === 'reaches'
       ? 'Built-in guard: the events I need reach the plugin (prompt.compose ran this session).'
       : state === 'passed-over'
-        ? 'Built-in guard: some events are passed over this plugin (no prompt.compose came before a request), so instruction files, hook context, attachments and compaction summaries are not being checked.'
+        ? 'Built-in guard: some events are passed over this plugin (no prompt.compose came before a request), so instruction files, hook context, skill text, attachments and compaction summaries are not being checked.'
         : f.policy && f.tier === 'user'
           ? 'Built-in guard: not known yet. This machine has managed settings and the plugin is a user plugin, so some events may be passed over; send a message and run this again.'
           : 'Built-in guard: not known yet. It shows after the first message of a session.'

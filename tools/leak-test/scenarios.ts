@@ -54,7 +54,7 @@ const BACKUP_BLOCKED = /aegiscontext \(backup lock\): your message holds a secre
 
 export const MCP_TOOL = 'mcp__leak__get_note'
 
-export const ALLOWED_TOOLS = ['Read', 'Bash', 'PowerShell', 'Agent', 'Task', MCP_TOOL]
+export const ALLOWED_TOOLS = ['Read', 'Bash', 'PowerShell', 'Agent', 'Task', 'Skill', MCP_TOOL]
 
 const LARGE_OUTPUT = 200 * 1024
 
@@ -187,6 +187,12 @@ export const SCENARIOS: Scenario[] = [
     doors: ['hook-context'],
     contextHook: 'hook-context',
     runs: [{ prompt: () => 'Reply with ok.', script: () => steps([]) }],
+  },
+  {
+    name: 'skill-text',
+    doors: ['skill'],
+    files: c => ({ [path.join('.claude', 'skills', 'leak-note', 'SKILL.md')]: `---\nname: leak-note\ndescription: A short note for this project.\n---\n\n${c.block('skill')}\n` }),
+    runs: [{ prompt: () => 'Use the leak-note skill.', script: () => steps([() => tool('Skill', { skill: 'leak-note' })]) }],
   },
 ]
 

@@ -301,7 +301,10 @@ async function runScenario(s: Scenario, opts: KitOptions, trap: { host: string; 
   let held = heldRe !== undefined && opts.expect === 'clean' && !s.doors.some(d => opts.expectFor?.(s.name, d) === 'leaks')
   const store = s.seedStore === undefined ? undefined : backendFor(thisOS(), { exec: nodeExec, files: nodeFiles(path.join(configDir, 'aegiscontext', 'store')) })
   try {
-    for (const [name, content] of Object.entries(s.files?.(ctx) ?? {})) fs.writeFileSync(path.join(work, name), content)
+    for (const [name, content] of Object.entries(s.files?.(ctx) ?? {})) {
+      fs.mkdirSync(path.dirname(path.join(work, name)), { recursive: true })
+      fs.writeFileSync(path.join(work, name), content)
+    }
     const mcpConfig = writeExtras(s, ctx, base, configDir)
     if (store) await saveList(store, doors.flatMap(d => d.fakes.map(f => ({ value: f.fake.value, label: 'kit', added: '2026-11-01' }))))
     for (const [index, run] of s.runs.entries()) {

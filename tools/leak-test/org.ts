@@ -28,10 +28,11 @@ export type TierMode = 'guarded' | 'org'
  *
  * Measured in CI on 2026-11-01 (Claude Code 2.1.316; the same on macOS, Windows and Linux): project instruction files
  * and settings-hook context leak (7 of 7 fakes each). `mention-file` was expected to leak and stayed clean, so it is
- * not listed. The compaction summary is stored raw, and the resume check then holds the next message, so the model is
+ * not listed. `skill-text` joined from the binary's list of passed-over rows (door `tool-message` from the Skill tool).
+ * The compaction summary is stored raw, and the resume check then holds the next message, so the model is
  * not sent it (scenario `compaction-held`); the hold, not the hiding, is what stops it.
  */
-export const GUARDED_OPEN: string[] = ['claude-md/claude-md', 'hook-context/hook-context']
+export const GUARDED_OPEN: string[] = ['claude-md/claude-md', 'hook-context/hook-context', 'skill-text/skill']
 
 /** The scenarios of the guarded run: all of them, with the compaction door replaced by the one that proves the hold. */
 export const guardedScenarios = (): Scenario[] => [...SCENARIOS.filter(s => s.name !== 'compaction'), ...GUARDED_ONLY]
@@ -50,7 +51,7 @@ export const guardedHoldScenarios = (): Scenario[] =>
 /** The organization install cannot run the resume door: it needs a run made before the tool was installed. */
 export const ORG_SCENARIOS: string[] = [
   'prompt-typed', 'prompt-pasted', 'read-file', 'mention-file', 'bash-output', 'bash-failed', 'bash-large',
-  'mcp-result', 'subagent-read', 'compaction', 'claude-md', 'hook-context',
+  'mcp-result', 'subagent-read', 'compaction', 'claude-md', 'hook-context', 'skill-text',
 ]
 
 /** The plugin's name in the marketplace, the way the settings name it. */

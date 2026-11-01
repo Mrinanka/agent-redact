@@ -67,9 +67,9 @@ Bugs, unfinished bits and open questions. Features we chose not to build go in s
 - The `@` copy's path holds `secret-shield`, so the model can tell it is a copy. Its Read of the real file is hidden, so nothing leaks.
 - A failed store read can take 20 s, and the retry runs inside a hook, so that row waits.
 - Step 6: doctor reports the plugin's tier by watching its own `$.command.list()` call pass a `command.list` hook (`next.origin.tier`). A `claude -p` run on 2.1.316 (Windows) printed `Plugin tier: user` with `--plugin-dir` and from a marketplace install, where the debug log says `aegiscontext@aegiscontext` and `next.origin.plugin` holds the bare name. `prepend` was not seen. "Managed" is read from the managed settings holding our `aegisContext` key or enabling our own plugin; `tests/doctor-managed-real.test.ts` checks that against a real managed file in CI, and now also that `prompt.compose` does not reach a user plugin under the real guard.
-- The guard warning itself (R-05a) has not been seen under the real guard yet. `$.ui.log` reaches Claude Code's debug log, so the kit now requires it in a guarded scenario that sent a request and forbids it in an org run (D-088); the next CI run is the first to check. Scratch runs with the sign removed showed it there.
+- The guard warning itself (R-05a) was seen under the real guard for the first time in CI run 41339214316, on all three systems: `$.ui.log` reaches Claude Code's debug log, and the kit requires it in a guarded scenario that sent a request and forbids it in an org run (D-088).
 - The guard's Team or Enterprise trigger was never measured: CI seats the guard with a managed file. In the binary the login only decides whether the guard is seated, so what follows should be the same.
-- The guard also passes `session.append` rows of door `tool-message` from the Skill tool past a user-tier plugin (binary, not measured, no kit door), so a secret in a skill's text would reach the model there. Spec §5.3 and §22 don't list it yet; the warning doesn't name it.
+- The backup lock is not run against the `skill-text` door: it is in neither `BACKUP_INSIDE` nor `BACKUP_OUTSIDE`, so whether it covers skill text is not known.
 - A wrong `<MARKETPLACE-FOLDER>` was tried with the snippet's settings in a scratch user settings file, not a managed one (D-020): no plugin loaded, and only the debug log said so. The real managed path should behave the same; not measured.
 - `--always` on a value whose store save fails stays harmless for the session only, and says so.
 
@@ -218,3 +218,7 @@ Newest last, 3–5 lines each: what exists now and what the next session needs.
 - A real run against the mock found that a `turn.step` hold must stream its answer; the two older holds had the same bug, and all three are fixed (D-087).
 - The owner reported `/code-review high` and `/verify` complete and asked to ship. `leak-test:guarded`, `:org` and `:guarded-hold` first run on this code in the PR's CI.
 - Next: the owner merges, then the release steps in `docs/release-checklist.md`.
+
+### 2026-11-02: skill text, after the ship
+- PR #7's first CI run was green on all three systems (run 41339214316): org 0 of 91, guarded 14 of 91, guarded-hold 0 of 14; the warning was seen under the real guard. A push and its PR share a concurrency group, so the push run shows as cancelled.
+- The owner asked for skill text to be fixed before the merge (D-089): the warning, refusal, doctor line, docs and spec name it, and the kit's `skill-text` door measures it. With the door, org and guarded each cover 14 doors and 98 fakes, and hold 3 doors.

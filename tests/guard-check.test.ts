@@ -30,7 +30,7 @@ test('a main step with no compose seen is a pass-over; before any step it is not
 
 test('the warning names what is not checked and the fix, and holds no value', () => {
   const w = guardWarning()
-  for (const word of ['instruction files', 'hook context', 'attachments', 'compaction', 'organization plugin', 'docs/managed.md']) assert.ok(w.includes(word), word)
+  for (const word of ['instruction files', 'hook context', 'skill text', 'attachments', 'compaction', 'organization plugin', 'docs/managed.md']) assert.ok(w.includes(word), word)
   assert.ok(!w.includes('project instruction'), 'all loaded instruction files, not only the project\'s')
   assert.ok(!w.includes('a check failed'), 'it is not a failed check')
   assert.ok(w.length < 400, 'short enough for a toast')
@@ -44,12 +44,12 @@ test('the warning names every sign of the guard, each one enough alone', () => {
 
 test('a held request says why, how to fix it, and that it was not sent', () => {
   const h = guardHeld()
-  for (const word of ['not sent', 'hold', 'instruction files', 'hook context', 'organization plugin', 'docs/managed.md', 'on_check_failure']) assert.ok(h.includes(word), word)
+  for (const word of ['not sent', 'hold', 'instruction files', 'hook context', 'skill text', 'organization plugin', 'docs/managed.md', 'on_check_failure']) assert.ok(h.includes(word), word)
 })
 
 test('the doctor line for a pass-over names the same doors as the warning', () => {
   const lines = guardDoctorLines({ composeSeen: false, warned: true, tier: 'user', policy: true }).join('\n')
-  for (const word of ['instruction files', 'hook context', 'attachments', 'compaction']) assert.ok(lines.includes(word), word)
+  for (const word of ['instruction files', 'hook context', 'skill text', 'attachments', 'compaction']) assert.ok(lines.includes(word), word)
   assert.ok(!lines.includes('project instruction'))
 })
 

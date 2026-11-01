@@ -114,6 +114,7 @@ Tiny clarifications go under **Minor** at the bottom.
 | D-086 | The stated minimum Claude Code is the oldest tested version, 2.1.309 | accepted | 6 | none |
 | D-087 | Under `on_check_failure: hold`, a guard pass-over refuses the request | accepted | 6 | 5.3, 12, 22 |
 | D-088 | Any one sign seats the guard; the warning names hook context and is proven in CI; the org run uses a real archive | accepted | 6 | 5.3, 22 |
+| D-089 | Skill text is a door, named in the warning and measured under the guard | accepted | 6 | 5.3, 22 |
 
 ## Entry template (short form, from D-018 on)
 
@@ -847,6 +848,13 @@ Tiny clarifications go under **Minor** at the bottom.
 - Why: An outside review, each point checked. The docs' "and with" was wrong, so a Team user with no managed settings could think themselves safe. `hook-context` leaked 7 of 7 and went unnamed. The warning had never been seen in CI. The documented folder held no marketplace.
 - Rejected: Requiring the warning per run (`compaction-held` run 2 and the resume door stop before any step, so they can't show it).
 - Evidence: the 2.1.316 binary's seat function (`a||l||f`) and its strings, including "this machine has a managed MCP server file"; `claude-code.d.ts` `PromptContextInput` ("`@` imports included"); a scratch run with the sign removed showed the warning in the debug log, not on stdout and not in the plugin log; a scratch run with the snippet's settings pointed at the documented folder logged "Skipping orphaned enabledPlugins entry" and loaded no plugin, with the nested folder loading it.
+
+## D-089: Skill text is a door, named in the warning and measured under the guard
+- Date / Step: 2026-11-02 / 6        Status: accepted
+- Decision: The warning, the refusal, the doctor line, the docs and spec §5.3 and §22 name skill text. The kit gains a `skill-text` door: a project skill read through the Skill tool. It joins `ORG_SCENARIOS` and `GUARDED_OPEN`, so it must stay clean in the org run, leak under the guard and be refused under `hold`.
+- Why: The guard's list passes the Skill tool's `tool-message` rows over, and under `allow` nothing told the person. It was the one open item where a real secret could reach the model with no warning. The owner approved fixing it before the tag.
+- Rejected: Recording it in Known issues only.
+- Evidence: the 2.1.316 binary's `register` of `sec-default` (`isSkillRow`); on Windows, with no guard, the door shows 7 of 7 fakes with no tool and 0 of 7 with the plugin. D-087's and D-088's kit runs were green on all three systems in CI run 41339214316: org 0 of 91, guarded 14 of 91 (7 at each listed door), hold 0 of 14.
 
 ---
 

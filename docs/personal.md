@@ -10,7 +10,7 @@ For one developer on their own computer. Administrators: [managed.md](managed.md
 
 A plugin from a marketplace sits in the `user` tier. Other plugins in a higher tier run first and could skip it, and a few switches turn it off silently: `--safe-mode`, `--bare`, `CLAUDE_CODE_SIMPLE=1`, a project's `disableAllHooks`, and an organization's `allowManagedHooksOnly`. When the hooks do not run, `/redact` does not exist; `/aegiscontext:doctor` still does, and says so.
 
-**On a machine with managed settings or a managed MCP server file, or with a Team or Enterprise login,** Claude Code seats its own guard first and routes instruction files, hook context, attachments and compaction summaries past a user plugin. Any one of those is enough. The plugin warns once per session and `/redact doctor` shows it. Under `on_check_failure: hold` it refuses every request instead, because it cannot check what would be sent. See [managed.md](managed.md) for the install that avoids it.
+**On a machine with managed settings or a managed MCP server file, or with a Team or Enterprise login,** Claude Code seats its own guard first and routes instruction files, hook context, skill text, attachments and compaction summaries past a user plugin. Any one of those is enough. The plugin warns once per session and `/redact doctor` shows it. Under `on_check_failure: hold` it refuses every request instead, because it cannot check what would be sent. See [managed.md](managed.md) for the install that avoids it.
 
 ## The backup lock
 
