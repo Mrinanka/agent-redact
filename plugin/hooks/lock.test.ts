@@ -1005,6 +1005,31 @@ test('/redact learn: a press changes a tick, and the save follows it', async ($,
   expect(w.ui.some(l => l.includes('saved 0 of 2'))).toBe(true)
 })
 
+test('/redact learn: a ticked value under 6 characters is skipped and said so, as /redact add refuses it', async ($, on) => {
+  const file = work('.env')
+  const w = world(on, { files: { [file]: `GITHUB_TOKEN=${FAKE}\nPORT=8080\n` }, env: true })
+  await redact($, 'learn')
+  const ui = await $.ui.mount(LEARN as never) as never as { press: (t: unknown) => Promise<unknown> }
+  await ui.press({ key: 'v1' })
+  await ui.press({ key: 'save' })
+  expect(w.ui.some(l => l.includes('saved 1 of 2') && l.includes('1 skipped') && l.includes('6 to 8,192'))).toBe(true)
+  await $.session.append(row('listening on 8080 now'))
+  expect(JSON.stringify(w.session.appended()).includes('8080')).toBe(true)
+})
+
+test('/redact learn: saving what is already saved says so, instead of only "saved 0"', async ($, on) => {
+  const file = work('.env')
+  const w = world(on, { files: { [file]: `GITHUB_TOKEN=${FAKE}\nPORT=8080\n` }, env: true })
+  await redact($, 'learn')
+  const first = await $.ui.mount(LEARN as never) as never as { press: (t: unknown) => Promise<unknown>; unmount: () => Promise<void> }
+  await first.press({ key: 'save' })
+  await first.unmount()
+  await redact($, 'learn')
+  const second = await $.ui.mount(LEARN as never) as never as { press: (t: unknown) => Promise<unknown> }
+  await second.press({ key: 'save' })
+  expect(w.ui.some(l => l.includes('saved 0 of 2') && l.includes('1 already saved'))).toBe(true)
+})
+
 test('/redact learn: a list too big for the store says it is full', async ($, on) => {
   const file = work('.env')
   const varied = (i: number): string => Array.from({ length: 7000 }, (_, k) => 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'.charAt((k * k * 31 + k * i + i) % 56)).join('')

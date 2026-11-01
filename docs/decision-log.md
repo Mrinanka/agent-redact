@@ -775,7 +775,7 @@ Tiny clarifications go under **Minor** at the bottom.
 - Evidence: a scratch run of `/redact doctor` under `claude -p`, before and after.
 
 ## D-080: Plan step 5 item 6 ("Managed-mode run in the Step 0 VM") is met by a managed-file run in CI
-- Date / Step: 2026-11-01 / 5        Status: proposed (needs the owner's yes)
+- Date / Step: 2026-11-01 / 5        Status: accepted (the owner said "use your judgement" and Claude chose yes; plan item 6 reworded to match)
 - Decision: Step 0 never had a VM: D-020 simulated Managed mode with a temporary managed settings file, and the VirtualBox/Docker idea was rejected there. So step 5 runs the backup lock from a real managed file the same way, in CI (`npm run leak-test:managed`, `tests/doctor-managed-real.test.ts`), on all three systems. The plan item should read "managed-file run" instead of "Step 0 VM".
 - Why: The words in the plan point at something that does not exist. The managed file run is what D-020 already chose, and it works on the other two systems, which the maintainer's PC cannot test.
 - Cost: it has not run on this PC, and "starting in observe mode" is not part of that run (it runs in safe mode). Both stay open until the first CI run is read.

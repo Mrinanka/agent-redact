@@ -186,7 +186,7 @@ Then **Audit 1**.
 3. **Only act when needed.** Each hook reads the main lock's marker first and does nothing when it says running with a fresh beat (not older than 5 minutes). A crash leaves "running" behind, so age decides (spec R-04, D-077).
 4. **Block on failure** or not, following `on_check_failure`.
 5. **Install snippets** for Personal mode (`~/.claude/settings.json`) and Managed mode.
-6. **Managed-mode run** in the Step 0 VM, starting in `observe` mode.
+6. **Managed-mode run** from a real managed settings file, in CI on all three systems (D-080). Step 0 had no VM; it used a temporary managed file on the maintainer's PC (D-020). The run is in safe mode; one that starts in `observe` mode has not been done.
 7. **Personal data:** the `personal_data` setting, off by default, finds emails and phone numbers (D-037). False alarms are measured on log-like text as well, because the false-alarm set is TypeScript sources.
 8. **Tune** the rules and harmless-value list on the catch, code and false-alarm sets.
 9. **Set the targets** for speed, catch rate and false alarms from the measurements, write them into the repo, and meet them.
